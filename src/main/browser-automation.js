@@ -1200,22 +1200,27 @@ class BrowserAutomation {
     }
 
     async ensureCheckbox(page) {
-        const checkbox = await page.waitForSelector('input[type="checkbox"]', {
-            timeout: 30000,
+        console.log(`Looking for final checkbox...`);
+
+        // Simple checkbox - just click it once
+        const clicked = await page.evaluate(() => {
+            const input = document.querySelector('input[type="checkbox"]');
+            if (!input) return false;
+
+            if (input.checked) {
+                console.log("Checkbox already checked");
+                return true;
+            }
+
+            input.click();
+            return input.checked;
         });
 
-        for (let i = 0; i < 6; i++) {
-            const isChecked = await page.evaluate(
-                (input) => input.checked,
-                checkbox,
-            );
-            if (isChecked) return;
-
-            await checkbox.click();
-            await new Promise((resolve) => setTimeout(resolve, 600));
+        if (!clicked) {
+            throw new Error("CHECKBOX_FAILED");
         }
 
-        throw new Error("CHECKBOX_FAILED");
+        console.log(`Final checkbox checked successfully`);
     }
 }
 
