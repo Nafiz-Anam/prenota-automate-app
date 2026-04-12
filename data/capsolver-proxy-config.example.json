@@ -1,0 +1,12 @@
+{
+  "capsolverProxy": {
+    "enabled": false,
+    "server": "https://proxy.example.com:443",
+    "username": "",
+    "password": ""
+  },
+  "notes": [
+    "Copy to capsolver-proxy-config.json (gitignored) to route CapSolver HTTPS API calls through an optional HTTPS proxy.",
+    "Or set CAPSOLVER_HTTPS_PROXY to a full proxy URL instead."
+  ]
+}

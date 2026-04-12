@@ -240,6 +240,38 @@ body {
 }
 
 /* Form Elements */
+.form-actions-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.capsolver-card code {
+    font-size: 0.9em;
+}
+
+.capsolver-status {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.checkbox-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin-bottom: 12px;
+}
+
+.checkbox-row input[type="checkbox"] {
+    margin-top: 3px;
+    flex-shrink: 0;
+}
+
 .form-group {
     margin-bottom: 16px;
 }
@@ -528,6 +560,24 @@ body {
     display: flex;
     gap: 12px;
     justify-content: flex-end;
+}
+
+/* Form Help Text */
+.form-help {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+}
+
+.form-help a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.form-help a:hover {
+    text-decoration: underline;
 }
 
 /* Responsive */

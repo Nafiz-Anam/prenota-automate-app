@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { BrowserAutomation } = require("./browser-automation.js");
@@ -11,6 +11,32 @@ let browserAutomation;
 const DATA_PATH = path.join(__dirname, "../../data");
 const ACCOUNTS_FILE = path.join(DATA_PATH, "accounts.json");
 const PROXIES_FILE = path.join(DATA_PATH, "proxies.json");
+const CAPSOLVER_SETTINGS_FILE = path.join(
+    DATA_PATH,
+    "capsolver-settings.json",
+);
+
+const ICON_PATH = path.join(__dirname, "../../assets/icon.png");
+
+function redactAutomationConfigForLog(config) {
+    if (!config || typeof config !== "object") return config;
+    const { chromiumExtensionPath, ...rest } = config;
+    return {
+        ...rest,
+        chromiumExtensionPath: chromiumExtensionPath ? "[set]" : undefined,
+    };
+}
+
+function summarizeProxiesForLog(proxies) {
+    if (!Array.isArray(proxies)) return [];
+    return proxies.map((p) => ({
+        host: p?.host,
+        port: p?.port,
+        type: p?.type,
+        user: p?.user ? "[set]" : undefined,
+        pass: p?.pass ? "[set]" : undefined,
+    }));
+}
 
 async function loadAccountsData() {
     try {
@@ -32,23 +58,59 @@ async function loadProxiesData() {
     }
 }
 
+function loadCapsolverSettingsData() {
+    try {
+        const data = fs.readFileSync(CAPSOLVER_SETTINGS_FILE, "utf8");
+        const parsed = JSON.parse(data);
+        return {
+            apiKey:
+                typeof parsed.apiKey === "string" ? parsed.apiKey : "",
+            chromiumExtensionPath:
+                typeof parsed.chromiumExtensionPath === "string"
+                    ? parsed.chromiumExtensionPath
+                    : "",
+            useChromeChannel: Boolean(parsed.useChromeChannel),
+        };
+    } catch (error) {
+        console.error("Error loading CapSolver settings:", error);
+        return {
+            apiKey: "",
+            chromiumExtensionPath: "",
+            useChromeChannel: false,
+        };
+    }
+}
+
 // Ensure data directory exists
 function ensureDataDirectory() {
     if (!fs.existsSync(DATA_PATH)) {
         fs.mkdirSync(DATA_PATH, { recursive: true });
     }
 
-    // Initialize files if they don't exist
     if (!fs.existsSync(ACCOUNTS_FILE)) {
         fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify([], null, 2));
     }
     if (!fs.existsSync(PROXIES_FILE)) {
         fs.writeFileSync(PROXIES_FILE, JSON.stringify([], null, 2));
     }
+    if (!fs.existsSync(CAPSOLVER_SETTINGS_FILE)) {
+        fs.writeFileSync(
+            CAPSOLVER_SETTINGS_FILE,
+            JSON.stringify(
+                {
+                    apiKey: "",
+                    chromiumExtensionPath: "",
+                    useChromeChannel: false,
+                },
+                null,
+                2,
+            ),
+        );
+    }
 }
 
 function createWindow() {
-    mainWindow = new BrowserWindow({
+    const winOpts = {
         width: 900,
         height: 700,
         minWidth: 800,
@@ -58,10 +120,15 @@ function createWindow() {
             contextIsolation: true,
             preload: path.join(__dirname, "preload.js"),
         },
-        icon: path.join(__dirname, "../../assets/icon.png"),
         show: false,
         titleBarStyle: "default",
-    });
+    };
+
+    if (fs.existsSync(ICON_PATH)) {
+        winOpts.icon = ICON_PATH;
+    }
+
+    mainWindow = new BrowserWindow(winOpts);
 
     mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
 
@@ -69,7 +136,6 @@ function createWindow() {
         mainWindow.show();
     });
 
-    // Dev tools in development
     if (process.argv.includes("--dev")) {
         mainWindow.webContents.openDevTools();
     }
@@ -98,8 +164,53 @@ ipcMain.handle("load-proxies", async () => {
     return loadProxiesData();
 });
 
+ipcMain.handle("load-capsolver-settings", async () => {
+    return loadCapsolverSettingsData();
+});
+
+ipcMain.handle("save-capsolver-settings", async (event, settings) => {
+    try {
+        const apiKey =
+            settings && typeof settings.apiKey === "string"
+                ? settings.apiKey
+                : "";
+        const chromiumExtensionPath =
+            settings && typeof settings.chromiumExtensionPath === "string"
+                ? settings.chromiumExtensionPath
+                : "";
+        const useChromeChannel = Boolean(settings?.useChromeChannel);
+        if (!fs.existsSync(DATA_PATH)) {
+            fs.mkdirSync(DATA_PATH, { recursive: true });
+        }
+        fs.writeFileSync(
+            CAPSOLVER_SETTINGS_FILE,
+            JSON.stringify(
+                { apiKey, chromiumExtensionPath, useChromeChannel },
+                null,
+                2,
+            ),
+        );
+        return { success: true };
+    } catch (error) {
+        console.error("Error saving CapSolver settings:", error);
+        return { success: false, error: error.message };
+    }
+});
+
 ipcMain.handle("save-proxies", async (event, proxies) => {
     try {
+        if (process.argv.includes("--dev")) {
+            console.log("Main process: Saving proxies to", PROXIES_FILE);
+            console.log(
+                "Proxies summary:",
+                JSON.stringify(summarizeProxiesForLog(proxies), null, 2),
+            );
+        }
+
+        if (!fs.existsSync(DATA_PATH)) {
+            fs.mkdirSync(DATA_PATH, { recursive: true });
+        }
+
         fs.writeFileSync(PROXIES_FILE, JSON.stringify(proxies, null, 2));
         return { success: true };
     } catch (error) {
@@ -110,18 +221,66 @@ ipcMain.handle("save-proxies", async (event, proxies) => {
 
 ipcMain.handle("start-automation", async (event, config) => {
     try {
+        console.log(
+            "Received start-automation request with config:",
+            JSON.stringify(redactAutomationConfigForLog(config), null, 2),
+        );
+
         if (!browserAutomation) {
             browserAutomation = new BrowserAutomation();
         }
 
+        const capsolverStored = loadCapsolverSettingsData();
+        const mergedConfig = {
+            ...config,
+            chromiumExtensionPath:
+                (config?.chromiumExtensionPath &&
+                    String(config.chromiumExtensionPath).trim()) ||
+                capsolverStored.chromiumExtensionPath ||
+                "",
+            useChromeChannel:
+                typeof config?.useChromeChannel === "boolean"
+                    ? config.useChromeChannel
+                    : Boolean(capsolverStored.useChromeChannel),
+        };
+
         const accounts = await loadAccountsData();
         const proxies = await loadProxiesData();
 
-        if (proxies.length < accounts.length) {
-            throw new Error("Not enough proxy IPs available!");
+        const usableProxies = Array.isArray(proxies)
+            ? proxies.filter((p) => p && p.type !== "web_unblocker")
+            : [];
+        const windowCount = Math.min(
+            Math.max(Number(config?.windowCount) || 1, 1),
+            20,
+        );
+        const parallelSessions = Math.min(
+            windowCount,
+            accounts.length,
+        );
+
+        console.log(
+            `Loaded ${accounts.length} accounts and ${proxies.length} proxy entries (${usableProxies.length} HTTP); ` +
+                `windows=${windowCount}, parallel sessions=${parallelSessions}`,
+        );
+
+        if (usableProxies.length === 0) {
+            throw new Error(
+                "No HTTP proxies configured. Add at least one standard proxy.",
+            );
         }
 
-        await browserAutomation.start(accounts, proxies, config);
+        if (usableProxies.length < parallelSessions) {
+            throw new Error(
+                `Not enough proxies: need ${parallelSessions} for ${parallelSessions} parallel window(s), but only ${usableProxies.length} HTTP proxy/proxies are configured.`,
+            );
+        }
+
+        browserAutomation.start(accounts, proxies, mergedConfig).catch((err) => {
+            console.error("Background automation error:", err.message);
+        });
+
+        console.log("Automation started successfully, returning success");
         return { success: true };
     } catch (error) {
         console.error("Error starting automation:", error);

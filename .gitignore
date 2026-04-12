@@ -1,1 +1,13 @@
 node_modules
+dist
+
+# Local secrets — use *.example.json templates in data/
+data/accounts.json
+data/proxies.json
+data/capsolver-proxy-config.json
+data/capsolver-settings.json
+
+# CapSolver unpacked extension may contain API key in assets/config.js
+capsolver-captcha-solver/assets/config.js
+CapSolver.Browser.Extension*/assets/config.js
+data/oxylabs-residential-proxies.json

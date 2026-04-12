@@ -47,6 +47,13 @@
                 </svg>
                 Proxies
             </button>
+            <button class="nav-btn" data-page="capsolver">
+                <svg class="nav-icon" viewBox="0 0 24 24">
+                    <path
+                        d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
+                </svg>
+                CapSolver
+            </button>
         </nav>
 
         <!-- Main Content -->
@@ -127,21 +134,10 @@
                         </div>
                     </div>
 
-                    <!-- Captcha Configuration -->
+                    <!-- Captcha: extension only (no in-app API) -->
                     <div class="card">
-                        <h3>Captcha Solving Method</h3>
-                        <div class="captcha-options">
-                            <label class="radio-option">
-                                <input type="radio" name="captcha" value="capsolver" checked>
-                                <span class="radio-custom"></span>
-                                Use CapSolver
-                            </label>
-                            <label class="radio-option">
-                                <input type="radio" name="captcha" value="buster">
-                                <span class="radio-custom"></span>
-                                Use Buster
-                            </label>
-                        </div>
+                        <h3>Captcha</h3>
+                        <p class="form-help">The automation browser loads the <strong>unpacked CapSolver extension</strong> (see <strong>CapSolver</strong> in the sidebar). After the privacy checkbox, the extension solves reCAPTCHA; the app then waits for <strong>PRENOTA</strong> to enable and clicks it.</p>
                     </div>
 
                     <!-- Control Buttons -->
@@ -219,6 +215,40 @@
                             <!-- Proxies will be populated here -->
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- CapSolver Page -->
+            <div class="page" id="capsolver-page">
+                <div class="page-header">
+                    <h2>CapSolver extension</h2>
+                </div>
+                <div class="card capsolver-card">
+                    <p class="form-help">Your key is stored in <code>data/capsolver-settings.json</code> on this machine
+                        (gitignored). Use the same pattern as accounts and proxies.</p>
+                    <div class="form-group">
+                        <label for="storedCapsolverApiKey">API Key</label>
+                        <input type="password" id="storedCapsolverApiKey" class="form-control" placeholder="CAP-..."
+                            autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="form-group">
+                        <label for="chromiumExtensionPath">Chromium extension folder (optional)</label>
+                        <input type="text" id="chromiumExtensionPath" class="form-control"
+                            placeholder="C:\path\to\unpacked-extension (folder containing manifest.json)"
+                            autocomplete="off" spellcheck="false">
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="useChromeChannel">
+                        <span>Use installed <strong>Google Chrome</strong> instead of bundled Chromium (optional). Default is Playwright’s Chromium — better for loading unpacked extensions. Enable only if you need Chrome-specific behavior (e.g. extension popup quirks).</span>
+                    </label>
+                    <p class="form-help">Store: <a href="https://chromewebstore.google.com/detail/captcha-solver-auto-captc/pgojnojmmhpofjgdmaebadhbocahppod?hl=en" target="_blank" rel="noopener noreferrer">CapSolver (Chrome Web Store)</a>. This app loads the <strong>unpacked</strong> folder (edit <code>assets/config.js</code> for the key). If the folder sits in the project root, it is auto-detected.</p>
+                    <p id="capsolverKeyStatus" class="form-help capsolver-status" aria-live="polite"></p>
+                    <div class="form-actions-row">
+                        <button type="button" id="saveCapsolverBtn" class="btn btn-primary">Save</button>
+                        <button type="button" id="clearCapsolverBtn" class="btn btn-secondary">Clear key</button>
+                    </div>
+                    <p class="form-help"><a href="https://dashboard.capsolver.com/" target="_blank"
+                            rel="noopener noreferrer">CapSolver Dashboard</a></p>
                 </div>
             </div>
         </main>

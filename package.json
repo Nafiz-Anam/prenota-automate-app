@@ -22,6 +22,7 @@
     "electron-builder": "^26.8.1"
   },
   "dependencies": {
+    "https-proxy-agent": "^9.0.0",
     "playwright": "^1.51.0",
     "uuid": "^13.0.0"
   },
@@ -48,8 +49,7 @@
       "assets/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": "nsis"
     },
     "npmRebuild": false
   }

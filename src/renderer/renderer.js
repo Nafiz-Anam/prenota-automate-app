@@ -3,6 +3,11 @@ class PrenotafacileApp {
         this.currentPage = "dashboard";
         this.accounts = [];
         this.proxies = [];
+        this.capsolverSettings = {
+            apiKey: "",
+            chromiumExtensionPath: "",
+            useChromeChannel: false,
+        };
         this.isRunning = false;
         this.statusUpdateInterval = null;
 
@@ -51,25 +56,166 @@ class PrenotafacileApp {
         document
             .getElementById("addProxyBtn")
             .addEventListener("click", () => this.showAddProxyModal());
+
+        document
+            .getElementById("saveCapsolverBtn")
+            .addEventListener("click", () => this.saveCapsolverSettingsFromUI());
+        document
+            .getElementById("clearCapsolverBtn")
+            .addEventListener("click", () => this.clearCapsolverSettingsFromUI());
     }
 
     async loadData() {
         try {
             this.accounts = await window.electronAPI.loadAccounts();
             this.proxies = await window.electronAPI.loadProxies();
+            this.capsolverSettings =
+                (await window.electronAPI.loadCapsolverSettings()) || {
+                    apiKey: "",
+                    chromiumExtensionPath: "",
+                    useChromeChannel: false,
+                };
+            this.refreshCapsolverForm();
         } catch (error) {
             console.error("Error loading data:", error);
             this.showNotification("Error loading data", "error");
         }
     }
 
+    refreshCapsolverForm() {
+        const input = document.getElementById("storedCapsolverApiKey");
+        const extInput = document.getElementById("chromiumExtensionPath");
+        const chromeChk = document.getElementById("useChromeChannel");
+        const status = document.getElementById("capsolverKeyStatus");
+        if (input) {
+            input.value = this.capsolverSettings?.apiKey ?? "";
+        }
+        if (extInput) {
+            extInput.value = this.capsolverSettings?.chromiumExtensionPath ?? "";
+        }
+        if (chromeChk) {
+            chromeChk.checked = Boolean(
+                this.capsolverSettings?.useChromeChannel,
+            );
+        }
+        if (status) {
+            const has = Boolean(
+                (this.capsolverSettings?.apiKey || "").trim(),
+            );
+            const hasExt = Boolean(
+                (this.capsolverSettings?.chromiumExtensionPath || "").trim(),
+            );
+            const useChrome = Boolean(
+                this.capsolverSettings?.useChromeChannel,
+            );
+            const parts = [];
+            if (has) parts.push("API key saved");
+            if (hasExt) parts.push("extension path saved");
+            if (useChrome) parts.push("using Google Chrome for automation");
+            status.textContent =
+                parts.length > 0
+                    ? `Saved: ${parts.join("; ")}.`
+                    : "No API key or extension path saved yet.";
+        }
+    }
+
+    async saveCapsolverSettingsFromUI() {
+        const input = document.getElementById("storedCapsolverApiKey");
+        const extInput = document.getElementById("chromiumExtensionPath");
+        const chromeChk = document.getElementById("useChromeChannel");
+        const apiKey = (input?.value ?? "").trim();
+        const chromiumExtensionPath = (extInput?.value ?? "").trim();
+        const useChromeChannel = Boolean(chromeChk?.checked);
+        this.capsolverSettings = {
+            apiKey,
+            chromiumExtensionPath,
+            useChromeChannel,
+        };
+        try {
+            const result = await window.electronAPI.saveCapsolverSettings(
+                this.capsolverSettings,
+            );
+            if (!result.success) {
+                throw new Error(result.error || "Save failed");
+            }
+            this.refreshCapsolverForm();
+            this.showNotification("CapSolver settings saved", "success");
+        } catch (error) {
+            console.error("Save CapSolver settings:", error);
+            this.showNotification(
+                "Could not save API key: " + error.message,
+                "error",
+            );
+        }
+    }
+
+    async clearCapsolverSettingsFromUI() {
+        if (
+            !confirm(
+                "Remove the saved CapSolver API key from this computer?",
+            )
+        ) {
+            return;
+        }
+        this.capsolverSettings = {
+            apiKey: "",
+            chromiumExtensionPath: "",
+            useChromeChannel: false,
+        };
+        const input = document.getElementById("storedCapsolverApiKey");
+        const extInput = document.getElementById("chromiumExtensionPath");
+        const chromeChk = document.getElementById("useChromeChannel");
+        if (input) input.value = "";
+        if (extInput) extInput.value = "";
+        if (chromeChk) chromeChk.checked = false;
+        try {
+            const result = await window.electronAPI.saveCapsolverSettings(
+                this.capsolverSettings,
+            );
+            if (!result.success) {
+                throw new Error(result.error || "Save failed");
+            }
+            this.refreshCapsolverForm();
+            this.showNotification("CapSolver API key cleared", "success");
+        } catch (error) {
+            console.error("Clear CapSolver settings:", error);
+            this.showNotification(
+                "Could not clear API key: " + error.message,
+                "error",
+            );
+        }
+    }
+
     async saveData() {
         try {
-            await window.electronAPI.saveAccounts(this.accounts);
-            await window.electronAPI.saveProxies(this.proxies);
+            if (typeof console !== "undefined" && console.debug) {
+                console.debug(
+                    "Saving accounts count:",
+                    this.accounts?.length ?? 0,
+                    "proxies count:",
+                    this.proxies?.length ?? 0,
+                );
+            }
+            const accountsResult = await window.electronAPI.saveAccounts(
+                this.accounts,
+            );
+            const proxiesResult = await window.electronAPI.saveProxies(
+                this.proxies,
+            );
+            if (typeof console !== "undefined" && console.debug) {
+                console.debug("Save accounts result:", accountsResult);
+                console.debug("Save proxies result:", proxiesResult);
+            }
+            if (!accountsResult.success || !proxiesResult.success) {
+                throw new Error("Save operation failed");
+            }
         } catch (error) {
             console.error("Error saving data:", error);
-            this.showNotification("Error saving data", "error");
+            this.showNotification(
+                "Error saving data: " + error.message,
+                "error",
+            );
+            throw error;
         }
     }
 
@@ -87,6 +233,9 @@ class PrenotafacileApp {
         document.getElementById(`${page}-page`).classList.add("active");
 
         this.currentPage = page;
+        if (page === "capsolver") {
+            this.refreshCapsolverForm();
+        }
     }
 
     updateUI() {
@@ -103,50 +252,93 @@ class PrenotafacileApp {
 
     updateAccountsTable() {
         const tbody = document.getElementById("accountsTableBody");
-        tbody.innerHTML = "";
+        tbody.replaceChildren();
 
         this.accounts.forEach((account, index) => {
             const row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${index + 1}</td>
-                <td>${account.username}</td>
-                <td>${this.maskPassword(account.password)}</td>
-                <td>
-                    <div class="table-actions">
-                        <button class="btn btn-sm btn-primary" onclick="app.editAccount(${index})">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="app.deleteAccount(${index})">Delete</button>
-                    </div>
-                </td>
-            `;
+
+            const tdNum = document.createElement("td");
+            tdNum.textContent = String(index + 1);
+            row.appendChild(tdNum);
+
+            const tdUser = document.createElement("td");
+            tdUser.textContent = account.username ?? "";
+            row.appendChild(tdUser);
+
+            const tdPass = document.createElement("td");
+            tdPass.textContent = this.maskPassword(account.password);
+            row.appendChild(tdPass);
+
+            const tdActions = document.createElement("td");
+            const actions = document.createElement("div");
+            actions.className = "table-actions";
+            const btnEdit = document.createElement("button");
+            btnEdit.className = "btn btn-sm btn-primary";
+            btnEdit.textContent = "Edit";
+            btnEdit.addEventListener("click", () => this.editAccount(index));
+            const btnDel = document.createElement("button");
+            btnDel.className = "btn btn-sm btn-danger";
+            btnDel.textContent = "Delete";
+            btnDel.addEventListener("click", () => this.deleteAccount(index));
+            actions.append(btnEdit, btnDel);
+            tdActions.appendChild(actions);
+            row.appendChild(tdActions);
+
             tbody.appendChild(row);
         });
     }
 
     updateProxiesTable() {
         const tbody = document.getElementById("proxiesTableBody");
-        tbody.innerHTML = "";
+        tbody.replaceChildren();
 
         this.proxies.forEach((proxy, index) => {
             const row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${index + 1}</td>
-                <td>${proxy.host}</td>
-                <td>${proxy.port}</td>
-                <td>${proxy.user}</td>
-                <td>${this.maskPassword(proxy.pass)}</td>
-                <td>
-                    <div class="table-actions">
-                        <button class="btn btn-sm btn-primary" onclick="app.editProxy(${index})">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="app.deleteProxy(${index})">Delete</button>
-                    </div>
-                </td>
-            `;
+
+            const tdNum = document.createElement("td");
+            tdNum.textContent = String(index + 1);
+            row.appendChild(tdNum);
+
+            const tdHost = document.createElement("td");
+            tdHost.textContent = proxy.host ?? "";
+            row.appendChild(tdHost);
+
+            const tdPort = document.createElement("td");
+            tdPort.textContent = proxy.port != null ? String(proxy.port) : "";
+            row.appendChild(tdPort);
+
+            const tdUser = document.createElement("td");
+            tdUser.textContent = proxy.user ?? "";
+            row.appendChild(tdUser);
+
+            const tdPass = document.createElement("td");
+            tdPass.textContent = this.maskPassword(proxy.pass);
+            row.appendChild(tdPass);
+
+            const tdActions = document.createElement("td");
+            const actions = document.createElement("div");
+            actions.className = "table-actions";
+            const btnEdit = document.createElement("button");
+            btnEdit.className = "btn btn-sm btn-primary";
+            btnEdit.textContent = "Edit";
+            btnEdit.addEventListener("click", () => this.editProxy(index));
+            const btnDel = document.createElement("button");
+            btnDel.className = "btn btn-sm btn-danger";
+            btnDel.textContent = "Delete";
+            btnDel.addEventListener("click", () => this.deleteProxy(index));
+            actions.append(btnEdit, btnDel);
+            tdActions.appendChild(actions);
+            row.appendChild(tdActions);
+
             tbody.appendChild(row);
         });
     }
 
     maskPassword(password) {
-        return "***".repeat(password.length);
+        if (password == null || password === "") {
+            return "";
+        }
+        return "***";
     }
 
     showAddAccountModal() {
@@ -288,7 +480,7 @@ class PrenotafacileApp {
             return;
         }
 
-        this.proxies.push({ host, port, user, pass });
+        this.proxies.push({ host, port, user, pass, type: "regular" });
         await this.saveData();
         this.updateUI();
         this.closeModal();
@@ -340,19 +532,36 @@ class PrenotafacileApp {
             return;
         }
 
-        this.proxies[index] = { host, port, user, pass };
-        await this.saveData();
-        this.updateUI();
-        this.closeModal();
-        this.showNotification("Proxy updated successfully", "success");
+        this.proxies[index] = { host, port, user, pass, type: "regular" };
+
+        try {
+            await this.saveData();
+            this.updateUI();
+            this.closeModal();
+            this.showNotification("Proxy updated successfully", "success");
+        } catch (error) {
+            console.error("Failed to update proxy:", error);
+            this.showNotification(
+                "Failed to update proxy: " + error.message,
+                "error",
+            );
+        }
     }
 
     async deleteProxy(index) {
         if (confirm("Are you sure you want to delete this proxy?")) {
             this.proxies.splice(index, 1);
-            await this.saveData();
-            this.updateUI();
-            this.showNotification("Proxy deleted successfully", "success");
+            try {
+                await this.saveData();
+                this.updateUI();
+                this.showNotification("Proxy deleted successfully", "success");
+            } catch (error) {
+                console.error("Failed to delete proxy:", error);
+                this.showNotification(
+                    "Failed to delete proxy: " + error.message,
+                    "error",
+                );
+            }
         }
     }
 
@@ -404,7 +613,7 @@ class PrenotafacileApp {
         try {
             const result = await window.electronAPI.startAutomation(config);
 
-            if (result.success) {
+            if (result && result.success) {
                 this.isRunning = true;
                 this.updateControlButtons();
                 this.updateStatus("running", "Automation Running");
@@ -412,15 +621,27 @@ class PrenotafacileApp {
                     "Automation started successfully",
                     "success",
                 );
-            } else {
+            } else if (result && !result.success) {
                 this.showNotification(
                     result.error || "Failed to start automation",
                     "error",
                 );
+            } else {
+                // result is undefined but automation may still be running
+                console.log(
+                    "Start automation returned undefined, checking status...",
+                );
+                this.isRunning = true;
+                this.updateControlButtons();
+                this.updateStatus("running", "Automation Running");
             }
         } catch (error) {
-            console.error("Start automation error:", error);
-            this.showNotification("Failed to start automation", "error");
+            console.error("Start automation error:", error.message);
+            console.error("Stack:", error.stack);
+            this.showNotification(
+                "Failed to start automation: " + error.message,
+                "error",
+            );
         }
     }
 
@@ -457,29 +678,29 @@ class PrenotafacileApp {
         const timerMode = document.querySelector(
             'input[name="timer"]:checked',
         ).value;
-        const captchaMethod = document.querySelector(
-            'input[name="captcha"]:checked',
-        ).value;
         const windowCount =
             parseInt(document.getElementById("windowCount").value) || 1;
+
+        const chromiumExtensionPath = (
+            this.capsolverSettings?.chromiumExtensionPath || ""
+        ).trim();
+        const useChromeChannel = Boolean(
+            this.capsolverSettings?.useChromeChannel,
+        );
 
         const config = {
             service,
             timerMode,
-            captchaMethod,
-            windowCount: Math.min(Math.max(windowCount, 1), 20),
+            windowCount,
+            chromiumExtensionPath,
+            useChromeChannel,
         };
 
-        if (timerMode === "scheduled") {
-            const hour =
-                parseInt(document.getElementById("hourInput").value) || 0;
-            const minute =
-                parseInt(document.getElementById("minuteInput").value) || 0;
-            const second =
-                parseInt(document.getElementById("secondInput").value) || 0;
-
-            config.scheduleTime = { hour, minute, second };
-        }
+        console.log("Automation config:", {
+            ...config,
+            chromiumExtensionPath: chromiumExtensionPath ? "[SET]" : "",
+            useChromeChannel,
+        });
 
         return config;
     }
@@ -488,8 +709,8 @@ class PrenotafacileApp {
         const startBtn = document.getElementById("startBtn");
         const stopBtn = document.getElementById("stopBtn");
 
-        startBtn.disabled = this.isRunning;
-        stopBtn.disabled = !this.isRunning;
+        if (startBtn) startBtn.disabled = this.isRunning;
+        if (stopBtn) stopBtn.disabled = !this.isRunning;
     }
 
     updateStatus(status, text) {
@@ -530,22 +751,43 @@ class PrenotafacileApp {
                 <div class="modal-content">
                     <div class="modal-header">
                         <h3 class="modal-title">${title}</h3>
-                        <button class="modal-close" onclick="app.closeModal()">&times;</button>
+                        <button type="button" class="modal-close" aria-label="Close">&times;</button>
                     </div>
                     <div class="modal-body">
                         ${content}
                     </div>
-                    <div class="modal-footer">
-                        ${buttons
-                            .map(
-                                (btn) =>
-                                    `<button class="btn ${btn.class}" onclick="${typeof btn.action === "function" ? `(${btn.action.toString()})()` : btn.action}">${btn.text}</button>`,
-                            )
-                            .join("")}
-                    </div>
+                    <div class="modal-footer"></div>
                 </div>
             </div>
         `;
+
+        modalContainer
+            .querySelector(".modal-close")
+            .addEventListener("click", () => this.closeModal());
+
+        const footer = modalContainer.querySelector(".modal-footer");
+        for (const btn of buttons) {
+            const el = document.createElement("button");
+            el.type = "button";
+            el.className = `btn ${btn.class}`;
+            el.textContent = btn.text;
+            if (btn.action === "close") {
+                el.addEventListener("click", () => this.closeModal());
+            } else if (typeof btn.action === "function") {
+                el.addEventListener("click", async () => {
+                    try {
+                        await btn.action();
+                    } catch (error) {
+                        console.error("Modal action failed:", error);
+                        this.showNotification(
+                            error?.message || "Something went wrong",
+                            "error",
+                        );
+                    }
+                });
+            }
+            footer.appendChild(el);
+        }
     }
 
     closeModal() {
