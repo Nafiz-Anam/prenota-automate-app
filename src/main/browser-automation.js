@@ -942,13 +942,45 @@ class BrowserAutomation {
             )
             .catch(() => {});
 
-        // Click structure banner
-        const structureBanner = await page.waitForSelector(
-            ".v-banner__content",
-            { timeout: 30000 },
-        );
-        await structureBanner.click();
-        await this.realClick(page, structureBanner, "Structure");
+        // Click on the structure banner using the same approach as the extension
+        console.log(`[${accountLabel}] Looking for structure banner...`);
+        try {
+            // Use page.evaluate to get the element and dispatch mouse events like the extension
+            const clicked = await page.evaluate(() => {
+                const element = document.querySelector(".v-banner__content");
+                if (!element) return false;
+
+                const r = element.getBoundingClientRect();
+                ["mousedown", "mouseup", "click"].forEach((t) =>
+                    element.dispatchEvent(
+                        new MouseEvent(t, {
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: r.left + r.width / 2,
+                            clientY: r.top + r.height / 2,
+                        }),
+                    ),
+                );
+                return true;
+            });
+
+            if (clicked) {
+                console.log(
+                    `[${accountLabel}] Structure banner clicked successfully using extension method`,
+                );
+            } else {
+                throw new Error("Structure banner not found");
+            }
+
+            // Wait a moment for selection to register
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch (error) {
+            console.error(
+                `[${accountLabel}] Structure selection failed:`,
+                error.message,
+            );
+            throw error;
+        }
 
         // Click AVANTI
         await this.clickAvanti(page);
@@ -966,19 +998,22 @@ class BrowserAutomation {
         const dateListbox = await page.waitForSelector('[role="listbox"]', {
             timeout: 30000,
         });
-        const dates = await dateListbox.querySelectorAll('[role="listitem"]');
+        const dates = await page
+            .locator('[role="listbox"] [role="listitem"]')
+            .all();
 
         for (let i = 0; i < dates.length; i++) {
             const date = dates[i];
-            await this.realClick(page, date, "Date");
+            await date.click();
 
             // Wait for time listbox
             const timeListbox = await page.waitForSelector(
                 '[role="listbox"]:nth-of-type(2)',
                 { timeout: 10000 },
             );
-            const times =
-                await timeListbox.querySelectorAll('[role="listitem"]');
+            const times = await page
+                .locator('[role="listbox"]:nth-of-type(2) [role="listitem"]')
+                .all();
 
             // Shuffle times (Fisher-Yates)
             const timeArray = Array.from(times);
@@ -989,7 +1024,7 @@ class BrowserAutomation {
 
             // Try times in random order
             for (const time of timeArray) {
-                await this.realClick(page, time, "Random Time");
+                await time.click();
                 await new Promise((resolve) => setTimeout(resolve, 1000));
 
                 await this.clickAvanti(page);
@@ -1013,14 +1048,10 @@ class BrowserAutomation {
         console.log(`[${accountLabel}] Handling additional information...`);
 
         // Click NO option
-        const noOption = await page.waitForFunction(
-            () =>
-                [...document.querySelectorAll("label")].find(
-                    (l) => l.innerText.trim() === "NO",
-                ),
-            { timeout: 30000 },
-        );
-        await this.realClick(page, noOption, "NO");
+        const noOption = await page.waitForSelector('label:has-text("NO")', {
+            timeout: 30000,
+        });
+        await noOption.click();
 
         // Wait for AVANTI to be enabled and click it
         await page.waitForFunction(
@@ -1087,22 +1118,52 @@ class BrowserAutomation {
     }
 
     async clickAvanti(page) {
-        await page.waitForFunction(
-            () =>
-                [...document.querySelectorAll("button")].find(
+        try {
+            console.log("Waiting for AVANTI button to be enabled...");
+
+            // Use the same approach as the extension
+            const clicked = await page.evaluate(() => {
+                const btn = [...document.querySelectorAll("button")].find(
                     (b) => b.innerText.trim() === "AVANTI" && !b.disabled,
-                ),
-            { timeout: 10000 },
-        );
+                );
+                if (!btn) return false;
 
-        const avantiBtn = await page.evaluate(() =>
-            [...document.querySelectorAll("button")].find(
-                (b) => b.innerText.trim() === "AVANTI" && !b.disabled,
-            ),
-        );
+                // Use the same realClick approach as the extension
+                const r = btn.getBoundingClientRect();
+                ["mousedown", "mouseup", "click"].forEach((t) =>
+                    btn.dispatchEvent(
+                        new MouseEvent(t, {
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: r.left + r.width / 2,
+                            clientY: r.top + r.height / 2,
+                        }),
+                    ),
+                );
+                return true;
+            });
 
-        if (avantiBtn) {
-            await this.realClick(page, avantiBtn, "AVANTI");
+            if (clicked) {
+                console.log(
+                    "AVANTI button clicked successfully using extension method",
+                );
+
+                // Wait for navigation to complete
+                try {
+                    await page.waitForLoadState("domcontentloaded", {
+                        timeout: 5000,
+                    });
+                } catch (e) {
+                    console.log(
+                        "Navigation may not have occurred, continuing...",
+                    );
+                }
+            } else {
+                throw new Error("AVANTI button not found or disabled");
+            }
+        } catch (error) {
+            console.error("AVANTI click failed:", error.message);
+            throw error;
         }
     }
 
