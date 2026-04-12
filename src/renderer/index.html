@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prenotafacile Automation</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <h1> Prenotafacile Automation</h1>
+                    <span class="version">v1.0.0</span>
+                </div>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Ready</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="navigation">
+            <button class="nav-btn active" data-page="dashboard">
+                <svg class="nav-icon" viewBox="0 0 24 24">
+                    <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />
+                </svg>
+                Dashboard
+            </button>
+            <button class="nav-btn" data-page="accounts">
+                <svg class="nav-icon" viewBox="0 0 24 24">
+                    <path
+                        d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                </svg>
+                Accounts
+            </button>
+            <button class="nav-btn" data-page="proxies">
+                <svg class="nav-icon" viewBox="0 0 24 24">
+                    <path
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                </svg>
+                Proxies
+            </button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <div class="page active" id="dashboard-page">
+                <div class="page-header">
+                    <h2>Dashboard</h2>
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-value" id="accountCount">0</div>
+                            <div class="stat-label">Accounts</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="proxyCount">0</div>
+                            <div class="stat-label">Proxies</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="activeBrowsers">0</div>
+                            <div class="stat-label">Active Browsers</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-content">
+                    <!-- Service Selection -->
+                    <div class="card">
+                        <h3>Service Selection</h3>
+                        <div class="form-group">
+                            <label>Select Service</label>
+                            <select id="serviceSelect" class="form-control">
+                                <option value="permesso-elettronico">Permesso elettronico</option>
+                                <option value="rinnovo-cartaceo">Rinnovo cartaceo</option>
+                                <option value="attesa-ricorso">Attesa ricorso</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Window Configuration -->
+                    <div class="card">
+                        <h3>Window Configuration</h3>
+                        <div class="form-group">
+                            <label for="windowCount">Number of Windows</label>
+                            <div class="window-input-group">
+                                <input type="number" id="windowCount" min="1" max="20" value="1" class="form-control">
+                                <span class="window-info">Min: 1, Max: 20</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Timer Configuration -->
+                    <div class="card">
+                        <h3>Schedule</h3>
+                        <div class="timer-options">
+                            <label class="radio-option">
+                                <input type="radio" name="timer" value="instant" checked>
+                                <span class="radio-custom"></span>
+                                Instant Start
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="timer" value="scheduled">
+                                <span class="radio-custom"></span>
+                                Scheduled Start
+                            </label>
+                        </div>
+
+                        <div class="time-inputs" id="timeInputs" style="display: none;">
+                            <div class="time-input-group">
+                                <input type="number" id="hourInput" min="0" max="23" placeholder="HH"
+                                    class="time-input">
+                                <span>:</span>
+                                <input type="number" id="minuteInput" min="0" max="59" placeholder="MM"
+                                    class="time-input">
+                                <span>:</span>
+                                <input type="number" id="secondInput" min="0" max="59" placeholder="SS"
+                                    class="time-input">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Captcha Configuration -->
+                    <div class="card">
+                        <h3>Captcha Solving Method</h3>
+                        <div class="captcha-options">
+                            <label class="radio-option">
+                                <input type="radio" name="captcha" value="capsolver" checked>
+                                <span class="radio-custom"></span>
+                                Use CapSolver
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="captcha" value="buster">
+                                <span class="radio-custom"></span>
+                                Use Buster
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Control Buttons -->
+                    <div class="control-panel">
+                        <button id="startBtn" class="btn btn-primary btn-large">
+                            <svg class="btn-icon" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                            Start Automation
+                        </button>
+                        <button id="stopBtn" class="btn btn-danger btn-large" disabled>
+                            <svg class="btn-icon" viewBox="0 0 24 24">
+                                <path d="M6 6h12v12H6z" />
+                            </svg>
+                            Stop All
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accounts Page -->
+            <div class="page" id="accounts-page">
+                <div class="page-header">
+                    <h2>Account Management</h2>
+                    <button id="addAccountBtn" class="btn btn-primary">
+                        <svg class="btn-icon" viewBox="0 0 24 24">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                        Add Account
+                    </button>
+                </div>
+
+                <div class="accounts-table-container">
+                    <table class="data-table" id="accountsTable">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Email</th>
+                                <th>Password</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="accountsTableBody">
+                            <!-- Accounts will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Proxies Page -->
+            <div class="page" id="proxies-page">
+                <div class="page-header">
+                    <h2>Proxy Management</h2>
+                    <button id="addProxyBtn" class="btn btn-primary">
+                        <svg class="btn-icon" viewBox="0 0 24 24">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                        Add Proxy
+                    </button>
+                </div>
+
+                <div class="proxies-table-container">
+                    <table class="data-table" id="proxiesTable">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Host</th>
+                                <th>Port</th>
+                                <th>User</th>
+                                <th>Password</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="proxiesTableBody">
+                            <!-- Proxies will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modalContainer"></div>
+
+    <script src="renderer.js"></script>
+</body>
+
+</html>

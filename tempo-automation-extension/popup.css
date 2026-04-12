@@ -1,0 +1,78 @@
+body {
+  font-family: Arial, sans-serif;
+  padding: 12px;
+  width: 260px;
+  background: #f9f9f9;
+}
+
+h2 {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.section {
+  margin-bottom: 10px;
+}
+
+label {
+  font-size: 13px;
+  margin-bottom: 3px;
+  display: block;
+}
+
+input[type="date"],
+input[type="time"],
+input[type="number"] {
+  width: 100%;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+button {
+  padding: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.primary {
+  flex: 1;
+  background: #007bff;
+  color: white;
+}
+
+.danger {
+  flex: 1;
+  background: #dc3545;
+  color: white;
+}
+
+.secondary {
+  width: 100%;
+  margin-top: 12px;
+  background: #6c757d;
+  color: white;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#status {
+  margin-top: 8px;
+  font-size: 12px;
+  text-align: center;
+}

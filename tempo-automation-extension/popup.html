@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      width: 260px;
+      padding: 10px;
+    }
+
+    h3 {
+      margin-top: 0;
+      text-align: center;
+    }
+
+    .section {
+      border: 1px solid #ccc;
+      padding: 8px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+    }
+
+    .row {
+      margin-bottom: 6px;
+    }
+
+    button {
+      padding: 6px;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      background: #aaa !important;
+      cursor: not-allowed;
+    }
+
+    #startBtn {
+      background: #1e88e5;
+      width: 48%;
+    }
+
+    #stopBtn {
+      background: #e53935;
+      width: 48%;
+    }
+
+    #resetBtn {
+      background: #000;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    #countdown {
+      text-align: center;
+      font-weight: bold;
+      margin-top: 6px;
+      color: #1e88e5;
+    }
+
+    #status {
+      text-align: center;
+      margin-top: 6px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <h3>Tempo-Automation</h3>
+
+  <!-- TIMER -->
+  <div class="section">
+    <div class="row">
+      <input type="checkbox" id="useTimer" />
+      <label for="useTimer">Use Timer</label>
+    </div>
+
+    <div class="row">
+      <label>Time</label>
+      <!-- ⏱️ Minutes only (no seconds selector) -->
+      <input type="time" id="targetTime" />
+    </div>
+
+    <div id="countdown"></div>
+  </div>
+
+  <div>
+    <button id="startBtn">START</button>
+    <button id="stopBtn" disabled>STOP</button>
+  </div>
+
+  <button id="resetBtn">RESET</button>
+
+  <div id="status">Idle</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

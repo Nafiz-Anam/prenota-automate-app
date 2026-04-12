@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Tempo Automation",
+  "version": "1.2.2",
+  "description": "Automates Tempo booking steps with timer support",
+  "incognito": "split",
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://prenotafacile.poliziadistato.it/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
