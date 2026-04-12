@@ -1047,11 +1047,43 @@ class BrowserAutomation {
     async handleAdditionalInfo(page, accountLabel) {
         console.log(`[${accountLabel}] Handling additional information...`);
 
-        // Click NO option
-        const noOption = await page.waitForSelector('label:has-text("NO")', {
-            timeout: 30000,
+        // Wait for additional info page
+        await page
+            .waitForFunction(
+                () =>
+                    document.body.innerText.includes("Informazioni aggiuntive"),
+                { timeout: 30000 },
+            )
+            .catch(() => {});
+
+        // Click NO option using the same approach as the extension
+        console.log(`[${accountLabel}] Looking for NO option...`);
+        const clicked = await page.evaluate(() => {
+            const no = [...document.querySelectorAll("label")].find(
+                (l) => l.innerText.trim() === "NO",
+            );
+            if (!no) return false;
+
+            // Use the same realClick approach as the extension
+            const r = no.getBoundingClientRect();
+            ["mousedown", "mouseup", "click"].forEach((t) =>
+                no.dispatchEvent(
+                    new MouseEvent(t, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: r.left + r.width / 2,
+                        clientY: r.top + r.height / 2,
+                    }),
+                ),
+            );
+            return true;
         });
-        await noOption.click();
+
+        if (!clicked) {
+            throw new Error("NO option not found");
+        }
+
+        console.log(`[${accountLabel}] NO option clicked successfully`);
 
         // Wait for AVANTI to be enabled and click it
         await page.waitForFunction(
