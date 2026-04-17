@@ -425,17 +425,9 @@ class BrowserAutomation {
             page.setDefaultNavigationTimeout(60000);
             page.setDefaultTimeout(30000);
 
-            // STEP 3: Navigate to main site
+            // STEP 3+4: Navigate directly to login page (skip redundant root nav)
             console.log(
-                `[${account.username}] STEP 3: Navigating to main site...`,
-            );
-
-            await this.gotoWithRetry(page, SITE_ROOT, account.username);
-            console.log(`[${account.username}] Navigation successful`);
-
-            // STEP 4: Navigate to login page
-            console.log(
-                `[${account.username}] STEP 4: Navigating to login page...`,
+                `[${account.username}] STEP 3: Navigating to login page...`,
             );
             await this.gotoWithRetry(page, LOGIN_URL, account.username).catch(
                 (err) =>
@@ -444,10 +436,6 @@ class BrowserAutomation {
                         err,
                     ),
             );
-
-            // STEP 5: Accept cookies
-            console.log(`[${account.username}] STEP 5: Accepting cookies...`);
-            await this.acceptCookiesPlaywright(page, account.username);
 
             // STEP 6: Login with credentials
             console.log(
@@ -681,7 +669,7 @@ class BrowserAutomation {
         for (const sel of selectors) {
             try {
                 const loc = page.locator(sel).first();
-                await loc.click({ timeout: 6000 });
+                await loc.click({ timeout: 2000 });
                 return;
             } catch {
                 /* try next */
@@ -692,7 +680,7 @@ class BrowserAutomation {
                 .getByRole("button", { name: /accetta/i })
                 .first()
                 .click({
-                    timeout: 4000,
+                    timeout: 2000,
                 });
         } catch {
             /* optional */
@@ -727,13 +715,12 @@ class BrowserAutomation {
                 hasText: /accedi/i,
             }),
             page.locator("a.btn.btn-primary, button.btn.btn-primary"),
-            page.locator(".btn-size-mrmary-white-text"),
         ];
 
         for (const candidate of submitCandidates) {
             try {
                 const btn = candidate.first();
-                await btn.waitFor({ state: "visible", timeout: 4000 });
+                await btn.waitFor({ state: "visible", timeout: 2000 });
                 const label = (
                     await btn.innerText().catch(() => "")
                 ).toLowerCase();
@@ -905,41 +892,84 @@ class BrowserAutomation {
     }
 
     async completeBookingFlow(page, accountLabel, config) {
-        console.log(
-            `[${accountLabel}] STEP 8: Starting booking flow (extension logic)...`,
-        );
+        const MAX_ATTEMPTS = 5;
 
-        try {
-            // STEP 8.1: Structure Selection - Click structure banner and AVANTI
-            console.log(`[${accountLabel}] STEP 8.1: Structure selection...`);
-            await this.handleStructureSelection(page, accountLabel);
-
-            // STEP 8.2: Date and Time Selection - Select first available date with random time
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             console.log(
-                `[${accountLabel}] STEP 8.2: Date and time selection...`,
+                `[${accountLabel}] STEP 8: Booking flow attempt ${attempt}/${MAX_ATTEMPTS}...`,
             );
-            await this.handleDateTimeSelection(page, accountLabel);
 
-            // STEP 8.3: Additional Information - Click NO option and AVANTI
-            console.log(
-                `[${accountLabel}] STEP 8.3: Additional information...`,
-            );
-            await this.handleAdditionalInfo(page, accountLabel);
+            try {
+                // STEP 8.1: Structure Selection
+                console.log(
+                    `[${accountLabel}] STEP 8.1: Structure selection...`,
+                );
+                await this.handleStructureSelection(page, accountLabel);
 
-            // STEP 8.4: Final Steps - Checkbox, CAPTCHA, and PRENOTA button
-            console.log(`[${accountLabel}] STEP 8.4: Final steps...`);
-            await this.handleFinalSteps(page, accountLabel, config);
+                // STEP 8.2: Date and Time Selection
+                console.log(
+                    `[${accountLabel}] STEP 8.2: Date and time selection...`,
+                );
+                await this.handleDateTimeSelection(page, accountLabel);
 
-            console.log(
-                `[${accountLabel}] STEP 8: Booking flow completed successfully`,
-            );
-        } catch (error) {
-            console.error(
-                `[${accountLabel}] Booking flow error:`,
-                error.message,
-            );
-            throw error;
+                // STEP 8.3: Additional Information
+                console.log(
+                    `[${accountLabel}] STEP 8.3: Additional information...`,
+                );
+                await this.handleAdditionalInfo(page, accountLabel);
+
+                // STEP 8.4: Final Steps - Checkbox, CAPTCHA, PRENOTA
+                console.log(`[${accountLabel}] STEP 8.4: Final steps...`);
+                const booked = await this.handleFinalSteps(
+                    page,
+                    accountLabel,
+                    config,
+                );
+
+                if (booked) {
+                    console.log(
+                        `[${accountLabel}] STEP 8: Booking completed on attempt ${attempt}.`,
+                    );
+                    return;
+                }
+
+                if (attempt < MAX_ATTEMPTS) {
+                    console.log(
+                        `[${accountLabel}] Attempt ${attempt} failed — navigating back to retry...`,
+                    );
+                    // Navigate back to booking start
+                    await page
+                        .goBack({ timeout: 10000 })
+                        .catch(() =>
+                            page.goto(
+                                "https://prenotafacile.poliziadistato.it/it/prenotazione",
+                                { waitUntil: "commit", timeout: 30000 },
+                            ),
+                        );
+                    await new Promise((r) => setTimeout(r, 1500));
+                }
+            } catch (error) {
+                console.error(
+                    `[${accountLabel}] Booking flow error (attempt ${attempt}):`,
+                    error.message,
+                );
+                if (attempt < MAX_ATTEMPTS) {
+                    await page
+                        .goBack({ timeout: 10000 })
+                        .catch(() =>
+                            page.goto(
+                                "https://prenotafacile.poliziadistato.it/it/prenotazione",
+                                { waitUntil: "commit", timeout: 30000 },
+                            ),
+                        );
+                    await new Promise((r) => setTimeout(r, 1500));
+                }
+            }
         }
+
+        console.log(
+            `[${accountLabel}] All ${MAX_ATTEMPTS} booking attempts exhausted — stopping.`,
+        );
     }
 
     async handleStructureSelection(page, accountLabel) {
@@ -1112,6 +1142,90 @@ class BrowserAutomation {
         await this.clickAvanti(page);
     }
 
+    // Polls for a solved reCAPTCHA token in the page and forces every known
+    // callback path so Vue's reactive form state registers the solution and
+    // enables the PRENOTA button. Runs in the background while we await the
+    // button; safe to call-and-ignore errors.
+    async _forceCaptchaTokenApply(page, accountLabel) {
+        for (let attempt = 0; attempt < 90; attempt++) {
+            await new Promise((r) => setTimeout(r, 1000));
+            let applied = false;
+            try {
+                applied = await page.evaluate(() => {
+                    // Find the first g-recaptcha-response textarea with a token
+                    const textareas = [
+                        ...document.querySelectorAll(
+                            'textarea[name="g-recaptcha-response"]',
+                        ),
+                    ];
+                    const token = textareas
+                        .map((t) => t.value && t.value.trim())
+                        .find((v) => v && v.length > 20);
+                    if (!token) return false;
+
+                    // Fire native input/change events so Vue picks up the value
+                    textareas.forEach((ta) => {
+                        if (!ta.value) return;
+                        ["input", "change"].forEach((type) =>
+                            ta.dispatchEvent(
+                                new Event(type, { bubbles: true }),
+                            ),
+                        );
+                    });
+
+                    // Walk ___grecaptcha_cfg.clients to find and call callbacks
+                    const clients =
+                        window.___grecaptcha_cfg &&
+                        window.___grecaptcha_cfg.clients;
+                    if (!clients) return true;
+
+                    const callFn = (fn) => {
+                        try {
+                            if (typeof fn === "function") fn(token);
+                            else if (
+                                typeof fn === "string" &&
+                                typeof window[fn] === "function"
+                            )
+                                window[fn](token);
+                        } catch (_) {}
+                    };
+
+                    const walk = (obj, depth) => {
+                        if (!obj || typeof obj !== "object" || depth > 6)
+                            return;
+                        for (const key of Object.keys(obj)) {
+                            try {
+                                const v = obj[key];
+                                if (
+                                    key === "callback" ||
+                                    key === "promise-callback"
+                                ) {
+                                    callFn(v);
+                                }
+                                walk(v, depth + 1);
+                            } catch (_) {}
+                        }
+                    };
+
+                    for (const id of Object.keys(clients)) {
+                        walk(clients[id], 0);
+                    }
+
+                    return true;
+                });
+            } catch (_) {
+                // page may have navigated; stop
+                break;
+            }
+            if (applied) {
+                console.log(
+                    `[${accountLabel}] Captcha token found and callbacks fired (attempt ${attempt + 1}).`,
+                );
+                return;
+            }
+        }
+    }
+
     async handleFinalSteps(page, accountLabel, config) {
         console.log(`[${accountLabel}] Handling final steps...`);
 
@@ -1189,127 +1303,146 @@ class BrowserAutomation {
             );
         }
 
+        // Start background helper: once extension delivers the token it may not
+        // fire Vue's reactive callback automatically (reCAPTCHA Enterprise /
+        // invisible widgets store callbacks differently). This loop watches for
+        // a non-empty g-recaptcha-response and manually triggers every known
+        // callback path so the Vue form registers the solved state.
+        if (hasCaptcha) {
+            this._forceCaptchaTokenApply(page, accountLabel).catch(() => {});
+        }
+
         // Wait for PRENOTA (enabled after extension solves or you solve manually)
         console.log(
             `[${accountLabel}] Waiting for PRENOTA button to become enabled...`,
         );
 
         try {
-            // Vuetify often uses role="button" or .v-btn, not always <button>
+            // The PRENOTA button on this site is never disabled via DOM
+            // attributes — it always has class "success" (green). The real
+            // gate is the g-recaptcha-response token: once the extension
+            // delivers the token and _forceCaptchaTokenApply fires the Vue
+            // callback, the form accepts the click. So we wait for the token.
+            console.log(
+                `[${accountLabel}] Waiting for g-recaptcha-response token (captcha solved)...`,
+            );
             await page.waitForFunction(
                 () => {
-                    const candidates = [
-                        ...document.querySelectorAll(
-                            'button,[role="button"],a.v-btn,a.btn,.v-btn',
-                        ),
-                    ];
-                    for (const el of candidates) {
-                        const txt = (el.textContent || "")
-                            .replace(/\s+/g, " ")
-                            .trim();
-                        if (!/\bPRENOTA\b/i.test(txt)) continue;
-                        const disabled =
-                            el.disabled === true ||
-                            el.getAttribute("aria-disabled") === "true" ||
-                            el.classList.contains("v-btn--disabled") ||
-                            (el.className &&
-                                String(el.className).includes("disabled"));
-                        if (!disabled) return true;
+                    const tas = document.querySelectorAll(
+                        'textarea[name="g-recaptcha-response"]',
+                    );
+                    for (const ta of tas) {
+                        if (ta.value && ta.value.trim().length > 20)
+                            return true;
                     }
                     return false;
                 },
                 undefined,
-                { timeout: 120000 },
+                { timeout: 300000 }, // 5-minute cap; captcha solving varies
+            );
+            console.log(
+                `[${accountLabel}] Captcha token confirmed in DOM, proceeding to click PRENOTA.`,
             );
 
-            await new Promise((resolve) => setTimeout(resolve, 800));
+            // Give Vue one tick to process the callback before we click
+            await new Promise((resolve) => setTimeout(resolve, 1500));
 
             console.log(
                 `[${accountLabel}] PRENOTA control is enabled, clicking to complete booking...`,
             );
 
+            // Two PRENOTA buttons exist in DOM — one visible (success/green),
+            // one hidden (display:none). Use real Playwright click (isTrusted=true)
+            // so Vue form handlers accept the event; synthetic events are rejected.
             const prenotaLoc = page
-                .locator(".v-btn, button, [role='button']")
-                .filter({ hasText: /\bPRENOTA\b/i })
+                .locator("button, .v-btn, [role='button']")
+                .filter({ hasText: /\bPRENOTA\b/i, visible: true })
                 .first();
-            await prenotaLoc.scrollIntoViewIfNeeded();
             try {
-                await prenotaLoc.click({ timeout: 25000, force: true });
-            } catch {
-                const clicked = await page.evaluate(() => {
+                await prenotaLoc.scrollIntoViewIfNeeded({ timeout: 5000 });
+                await prenotaLoc.click({ timeout: 15000 });
+            } catch (_) {
+                // Fallback: synthetic click if Playwright locator fails
+                await page.evaluate(() => {
                     const nodes = [
                         ...document.querySelectorAll(
                             "button, .v-btn, [role='button']",
                         ),
                     ];
-                    const btn = nodes.find((el) =>
-                        /\bPRENOTA\b/i.test(el.textContent || ""),
-                    );
-                    if (!btn) return false;
-                    btn.scrollIntoView({ block: "center", inline: "nearest" });
-                    btn.dispatchEvent(
-                        new MouseEvent("click", {
-                            bubbles: true,
-                            cancelable: true,
-                            view: window,
-                        }),
-                    );
-                    return true;
+                    const btn = nodes.find((el) => {
+                        if (!/\bPRENOTA\b/i.test(el.textContent || ""))
+                            return false;
+                        const style = window.getComputedStyle(el);
+                        return (
+                            style.display !== "none" &&
+                            style.visibility !== "hidden" &&
+                            style.opacity !== "0"
+                        );
+                    });
+                    if (btn) {
+                        btn.scrollIntoView({ block: "center" });
+                        btn.click();
+                    }
                 });
-                if (!clicked) {
-                    throw new Error("PRENOTA click fallback found no element");
-                }
             }
             console.log(
                 `[${accountLabel}] PRENOTA button clicked successfully!`,
             );
 
-            // Wait a moment to see if navigation occurs
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            // Wait up to 45s for "Complimenti!" success page
+            // (server-side captcha verification + DB write takes several seconds)
+            const booked = await page
+                .waitForFunction(
+                    () => {
+                        const t =
+                            document.body.innerText ||
+                            document.body.textContent ||
+                            "";
+                        return (
+                            t.includes("Complimenti") ||
+                            t.includes("prenotazione è stata inserita") ||
+                            t.includes("Prenotazione N.")
+                        );
+                    },
+                    undefined,
+                    { timeout: 45000 },
+                )
+                .then(() => true)
+                .catch(() => false);
 
-            // Check if we navigated away or if booking was successful
-            const currentUrl = page.url();
-            if (!currentUrl.includes("prenotazione")) {
+            if (booked) {
+                const bookingNum = await page
+                    .evaluate(() => {
+                        const m = (
+                            document.body.innerText || ""
+                        ).match(/Prenotazione N\.\s*([\w-]+)/);
+                        return m ? m[1] : null;
+                    })
+                    .catch(() => null);
                 console.log(
-                    `[${accountLabel}] Booking appears successful - navigated away from booking page`,
+                    `[${accountLabel}] BOOKING SUCCESS! Ref: ${bookingNum || "unknown"}`,
+                );
+                return true;
+            }
+
+            // Check if site redirected back to an earlier step (server rejected captcha)
+            const currentUrl = page.url();
+            if (currentUrl.includes("/prenotazione") && !currentUrl.includes("step=5") && !currentUrl.includes("step=6")) {
+                console.log(
+                    `[${accountLabel}] Site redirected back to earlier step (captcha rejected or session issue). URL: ${currentUrl}`,
                 );
             } else {
                 console.log(
-                    `[${accountLabel}] Still on booking page - checking for success indicators...`,
+                    `[${accountLabel}] Success page not detected after PRENOTA click.`,
                 );
-
-                // Look for success messages or confirmation
-                const hasSuccessMessage = await page.evaluate(() => {
-                    const bodyText =
-                        document.body.innerText ||
-                        document.body.textContent ||
-                        "";
-                    return (
-                        bodyText.includes("confermata") ||
-                        bodyText.includes("prenotazione completata") ||
-                        bodyText.includes("success") ||
-                        bodyText.includes("completata")
-                    );
-                });
-
-                if (hasSuccessMessage) {
-                    console.log(
-                        `[${accountLabel}] Success message detected - booking completed!`,
-                    );
-                } else {
-                    console.log(
-                        `[${accountLabel}] No clear success indicator - manual verification needed`,
-                    );
-                }
             }
+            return false;
         } catch (error) {
             console.error(
                 `[${accountLabel}] Error with PRENOTA button:`,
                 error.message,
             );
-            console.log(
-                `[${accountLabel}] This might be due to the reCAPTCHA Enterprise quota issue`,
-            );
+            return false;
         }
     }
 
@@ -1520,14 +1653,14 @@ class BrowserAutomation {
             async () => {
                 await page
                     .getByRole("radio", { name: /^duplicato$/i })
-                    .click({ force: true, timeout: 6000 });
+                    .click({ force: true, timeout: 2000 });
                 return true;
             },
             async () => {
                 await page
                     .getByRole("radio", { name: /duplicato/i })
                     .first()
-                    .click({ force: true, timeout: 6000 });
+                    .click({ force: true, timeout: 2000 });
                 return true;
             },
             async () => {
@@ -1535,8 +1668,8 @@ class BrowserAutomation {
                     .locator("label.form-control, label")
                     .filter({ hasText: /^\s*duplicato\s*$/i })
                     .first();
-                await lab.waitFor({ state: "visible", timeout: 6000 });
-                await lab.click({ force: true, timeout: 5000 });
+                await lab.waitFor({ state: "visible", timeout: 2000 });
+                await lab.click({ force: true, timeout: 2000 });
                 return true;
             },
             async () => {
@@ -1544,11 +1677,11 @@ class BrowserAutomation {
                     .locator(".input-group-text, .input-group")
                     .filter({ hasText: /^\s*duplicato\s*$/i })
                     .first();
-                await group.waitFor({ state: "visible", timeout: 6000 });
+                await group.waitFor({ state: "visible", timeout: 2000 });
                 const r = group
                     .locator('input[type="radio"][name="tipologia"]')
                     .first();
-                await r.click({ force: true, timeout: 5000 });
+                await r.click({ force: true, timeout: 2000 });
                 return true;
             },
         ];

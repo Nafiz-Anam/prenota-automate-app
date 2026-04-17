@@ -1,5 +1,6 @@
 node_modules
 dist
+release
 
 # Local secrets — use *.example.json templates in data/
 data/accounts.json

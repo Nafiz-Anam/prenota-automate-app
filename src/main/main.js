@@ -7,8 +7,16 @@ const { BrowserAutomation } = require("./browser-automation.js");
 let mainWindow;
 let browserAutomation;
 
+/** Writable JSON store in production (app.asar is read-only). */
+function getDataPath() {
+    if (app.isPackaged) {
+        return path.join(app.getPath("userData"), "data");
+    }
+    return path.join(__dirname, "../../data");
+}
+
 // Data paths
-const DATA_PATH = path.join(__dirname, "../../data");
+const DATA_PATH = getDataPath();
 const ACCOUNTS_FILE = path.join(DATA_PATH, "accounts.json");
 const PROXIES_FILE = path.join(DATA_PATH, "proxies.json");
 const CAPSOLVER_SETTINGS_FILE = path.join(

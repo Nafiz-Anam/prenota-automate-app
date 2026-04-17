@@ -7,7 +7,8 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
-    "dist": "electron-builder --publish=never"
+    "dist": "electron-builder --publish=never",
+    "dist:win": "node scripts/close-built-app.js && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --publish=never"
   },
   "keywords": [
     "automation",
@@ -18,6 +19,7 @@
   "author": "Prenotafacile Automation",
   "license": "MIT",
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1"
   },
@@ -41,16 +43,23 @@
     "appId": "com.prenotafacile.automation",
     "productName": "Prenotafacile Automation",
     "directories": {
-      "output": "dist"
+      "output": "release"
     },
     "files": [
       "src/**/*",
       "data/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "CapSolver.Browser.Extension*/**",
+      "!data/accounts.json",
+      "!data/proxies.json",
+      "!data/capsolver-settings.json"
     ],
     "win": {
       "target": "nsis"
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "electronFuses": {
+      "enableEmbeddedAsarIntegrityValidation": false
+    }
   }
 }
