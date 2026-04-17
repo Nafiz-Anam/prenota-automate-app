@@ -66,6 +66,27 @@ async function loadProxiesData() {
     }
 }
 
+function expandProxyPool(proxies) {
+    if (!Array.isArray(proxies)) return [];
+    const expanded = [];
+    for (const p of proxies) {
+        if (!p || !p.host || p.port == null) continue;
+        const basePort = parseInt(p.port, 10);
+        if (!Number.isFinite(basePort) || basePort <= 0) continue;
+        const range = Math.max(parseInt(p.portRange, 10) || 1, 1);
+        for (let i = 0; i < range; i++) {
+            expanded.push({
+                host: p.host,
+                port: String(basePort + i),
+                user: p.user,
+                pass: p.pass,
+                type: p.type || "regular",
+            });
+        }
+    }
+    return expanded;
+}
+
 function loadCapsolverSettingsData() {
     try {
         const data = fs.readFileSync(CAPSOLVER_SETTINGS_FILE, "utf8");
@@ -235,7 +256,7 @@ ipcMain.handle("start-automation", async (event, config) => {
         );
 
         if (!browserAutomation) {
-            browserAutomation = new BrowserAutomation();
+            browserAutomation = new BrowserAutomation(mainWindow);
         }
 
         const capsolverStored = loadCapsolverSettingsData();
@@ -253,11 +274,15 @@ ipcMain.handle("start-automation", async (event, config) => {
         };
 
         const accounts = await loadAccountsData();
-        const proxies = await loadProxiesData();
+        const rawProxies = await loadProxiesData();
+        const proxies = expandProxyPool(rawProxies);
 
         const usableProxies = Array.isArray(proxies)
             ? proxies.filter((p) => p && p.type !== "web_unblocker")
             : [];
+        console.log(
+            `Proxy pool expanded: ${rawProxies.length} entries → ${proxies.length} proxies (port ranges applied)`,
+        );
         const windowCount = Math.min(
             Math.max(Number(config?.windowCount) || 1, 1),
             20,

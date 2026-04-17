@@ -19,6 +19,11 @@ class PrenotafacileApp {
         await this.loadData();
         this.updateUI();
         this.startStatusMonitoring();
+        if (window.electronAPI.onAutomationLog) {
+            window.electronAPI.onAutomationLog((data) => {
+                console.log(`[WIN:${data.account}] ${data.message}`);
+            });
+        }
     }
 
     setupEventListeners() {
@@ -304,7 +309,12 @@ class PrenotafacileApp {
             row.appendChild(tdHost);
 
             const tdPort = document.createElement("td");
-            tdPort.textContent = proxy.port != null ? String(proxy.port) : "";
+            const range = Math.max(parseInt(proxy.portRange, 10) || 1, 1);
+            const basePort = proxy.port != null ? String(proxy.port) : "";
+            tdPort.textContent =
+                range > 1 && basePort
+                    ? `${basePort} (×${range})`
+                    : basePort;
             row.appendChild(tdPort);
 
             const tdUser = document.createElement("td");
@@ -446,8 +456,12 @@ class PrenotafacileApp {
                 <input type="text" id="proxyHost" class="form-control" placeholder="e.g., proxy.example.com">
             </div>
             <div class="form-group">
-                <label>Port</label>
+                <label>Port (base)</label>
                 <input type="text" id="proxyPort" class="form-control" placeholder="e.g., 8080">
+            </div>
+            <div class="form-group">
+                <label>Port Range (1 = single proxy; N = ports base..base+N-1)</label>
+                <input type="number" id="proxyPortRange" class="form-control" value="1" min="1" max="1000">
             </div>
             <div class="form-group">
                 <label>Username</label>
@@ -474,13 +488,17 @@ class PrenotafacileApp {
         const port = document.getElementById("proxyPort").value.trim();
         const user = document.getElementById("proxyUser").value.trim();
         const pass = document.getElementById("proxyPass").value;
+        const portRange = Math.max(
+            parseInt(document.getElementById("proxyPortRange").value, 10) || 1,
+            1,
+        );
 
         if (!host || !port || !user || !pass) {
             this.showNotification("Please fill all fields", "error");
             return;
         }
 
-        this.proxies.push({ host, port, user, pass, type: "regular" });
+        this.proxies.push({ host, port, user, pass, portRange, type: "regular" });
         await this.saveData();
         this.updateUI();
         this.closeModal();
@@ -498,8 +516,12 @@ class PrenotafacileApp {
                 <input type="text" id="proxyHost" class="form-control" value="${proxy.host}">
             </div>
             <div class="form-group">
-                <label>Port</label>
+                <label>Port (base)</label>
                 <input type="text" id="proxyPort" class="form-control" value="${proxy.port}">
+            </div>
+            <div class="form-group">
+                <label>Port Range (1 = single proxy; N = ports base..base+N-1)</label>
+                <input type="number" id="proxyPortRange" class="form-control" value="${proxy.portRange || 1}" min="1" max="1000">
             </div>
             <div class="form-group">
                 <label>Username</label>
@@ -526,13 +548,17 @@ class PrenotafacileApp {
         const port = document.getElementById("proxyPort").value.trim();
         const user = document.getElementById("proxyUser").value.trim();
         const pass = document.getElementById("proxyPass").value;
+        const portRange = Math.max(
+            parseInt(document.getElementById("proxyPortRange").value, 10) || 1,
+            1,
+        );
 
         if (!host || !port || !user || !pass) {
             this.showNotification("Please fill all fields", "error");
             return;
         }
 
-        this.proxies[index] = { host, port, user, pass, type: "regular" };
+        this.proxies[index] = { host, port, user, pass, portRange, type: "regular" };
 
         try {
             await this.saveData();
@@ -600,9 +626,14 @@ class PrenotafacileApp {
             return;
         }
 
-        if (windowCount > this.proxies.length) {
+        const expandedProxyCount = this.proxies.reduce(
+            (sum, p) =>
+                sum + Math.max(parseInt(p.portRange, 10) || 1, 1),
+            0,
+        );
+        if (windowCount > expandedProxyCount) {
             this.showNotification(
-                `Not enough proxies for ${windowCount} windows (available: ${this.proxies.length})`,
+                `Not enough proxies for ${windowCount} windows (available: ${expandedProxyCount})`,
                 "error",
             );
             return;

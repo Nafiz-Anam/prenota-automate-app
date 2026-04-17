@@ -266,10 +266,12 @@ function logRecaptchaSiteQuotaBlocked(accountLabel) {
 }
 
 class BrowserAutomation {
-    constructor() {
+    constructor(mainWindow = null) {
         this.browsers = new Map();
         this.isRunning = false;
         this.stopFlag = false;
+        this.activeCount = 0;
+        this.mainWindow = mainWindow;
     }
 
     async start(accounts, proxies, config = {}) {
@@ -313,14 +315,18 @@ class BrowserAutomation {
             `Starting automation with ${sessions.length} windows (requested: ${windowCount})`,
         );
 
-        sessions.forEach(({ account, proxy }) => {
+        const LAUNCH_DELAY_MS = 3000;
+        sessions.forEach(({ account, proxy }, index) => {
             if (this.stopFlag) return;
-            this.runAccount(account, proxy, config).catch((error) => {
-                console.error(
-                    `Error running account ${account.username}:`,
-                    error,
-                );
-            });
+            setTimeout(() => {
+                if (this.stopFlag) return;
+                this.runAccount(account, proxy, config).catch((error) => {
+                    console.error(
+                        `Error running account ${account.username}:`,
+                        error,
+                    );
+                });
+            }, index * LAUNCH_DELAY_MS);
         });
     }
 
@@ -328,10 +334,22 @@ class BrowserAutomation {
         const browserId = uuidv4();
         let browser = null;
         let context = null;
+        this.activeCount++;
+
+        const winLog = (msg) => {
+            console.log(`[${account.username}] ${msg}`);
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                this.mainWindow.webContents.send("automation-log", {
+                    account: account.username,
+                    message: msg,
+                    timestamp: Date.now(),
+                });
+            }
+        };
 
         try {
             // STEP 1: Launch browser with proxy and performance optimizations
-            console.log(`[${account.username}] STEP 1: Launching browser...`);
+            winLog("STEP 1: Launching browser...");
             const proxyConfig = buildPlaywrightProxyConfig(proxy);
             if (!proxyConfig) {
                 throw new Error(
@@ -397,9 +415,7 @@ class BrowserAutomation {
 
             this.browsers.set(browserId, { browser, context });
 
-            console.log(
-                `[${account.username}] STEP 2: Browser context ready (extension=${Boolean(extDir)})`,
-            );
+            winLog(`STEP 2: Browser context ready (extension=${Boolean(extDir)})`);
 
             const page =
                 context.pages()[0] || (await context.newPage());
@@ -426,9 +442,7 @@ class BrowserAutomation {
             page.setDefaultTimeout(30000);
 
             // STEP 3+4: Navigate directly to login page (skip redundant root nav)
-            console.log(
-                `[${account.username}] STEP 3: Navigating to login page...`,
-            );
+            winLog("STEP 3: Navigating to login page...");
             await this.gotoWithRetry(page, LOGIN_URL, account.username).catch(
                 (err) =>
                     console.error(
@@ -438,17 +452,13 @@ class BrowserAutomation {
             );
 
             // STEP 6: Login with credentials
-            console.log(
-                `[${account.username}] STEP 6: Logging in with credentials...`,
-            );
+            winLog("STEP 6: Logging in with credentials...");
             await this.loginPlaywright(page, account).catch((err) =>
                 console.error(`[${account.username}] Login:`, err?.message),
             );
 
             // STEP 7: Complete service selection flow
-            console.log(
-                `[${account.username}] STEP 7: Starting service selection flow...`,
-            );
+            winLog("STEP 7: Starting service selection flow...");
             await this.installProxyOverlay(page, proxy).catch(() => {});
             await this.completeServiceFlow(
                 page,
@@ -457,9 +467,7 @@ class BrowserAutomation {
                 config,
             );
 
-            console.log(
-                `Started browser for ${account.username} with proxy ${proxy.host}:${proxy.port}`,
-            );
+            winLog(`Browser running with proxy ${proxy.host}:${proxy.port}`);
 
             // Keep session alive until Stop, disconnect, or all pages closed
             while (!this.stopFlag) {
@@ -512,7 +520,9 @@ class BrowserAutomation {
         if (this.browsers.has(browserId)) {
             this.browsers.delete(browserId);
         }
-        if (this.browsers.size === 0) {
+        this.activeCount--;
+        if (this.activeCount <= 0) {
+            this.activeCount = 0;
             this.isRunning = false;
         }
     }

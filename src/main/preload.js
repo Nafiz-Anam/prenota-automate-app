@@ -14,4 +14,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     startAutomation: (config) => ipcRenderer.invoke("start-automation", config),
     stopAutomation: () => ipcRenderer.invoke("stop-automation"),
     getAutomationStatus: () => ipcRenderer.invoke("get-automation-status"),
+    onAutomationLog: (callback) =>
+        ipcRenderer.on("automation-log", (_, data) => callback(data)),
 });
