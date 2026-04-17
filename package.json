@@ -55,7 +55,11 @@
       "!data/capsolver-settings.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "signAndEditExecutable": false,
+      "signtoolOptions": {
+        "sign": null
+      }
     },
     "npmRebuild": false,
     "electronFuses": {
