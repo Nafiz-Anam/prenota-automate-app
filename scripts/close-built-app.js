@@ -10,11 +10,11 @@ if (os.platform() !== "win32") {
 }
 
 try {
-    execSync('taskkill /F /IM "Prenotafacile Automation.exe" /T', {
+    execSync('taskkill /F /IM "Auto Traffic.exe" /T', {
         stdio: "ignore",
     });
     console.log(
-        '[dist:win] Closed "Prenotafacile Automation" so the build can overwrite dist.',
+        '[dist:win] Closed "Auto Traffic" so the build can overwrite dist.',
     );
 } catch {
     /* not running — OK */

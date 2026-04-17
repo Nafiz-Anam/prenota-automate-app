@@ -1,7 +1,7 @@
 {
-  "name": "prenotafacile-automation",
+  "name": "auto-traffic",
   "version": "1.0.0",
-  "description": "Prenotafacile Automation Software - Electron + Playwright",
+  "description": "Auto Traffic - Electron + Playwright",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
@@ -12,11 +12,11 @@
   },
   "keywords": [
     "automation",
-    "prenotafacile",
+    "auto-traffic",
     "electron",
     "playwright"
   ],
-  "author": "Prenotafacile Automation",
+  "author": "Auto Traffic",
   "license": "MIT",
   "devDependencies": {
     "cross-env": "^7.0.3",
@@ -40,8 +40,8 @@
     "gauge": "npm:cli-progress"
   },
   "build": {
-    "appId": "com.prenotafacile.automation",
-    "productName": "Prenotafacile Automation",
+    "appId": "com.autotraffic.app",
+    "productName": "Auto Traffic",
     "directories": {
       "output": "release"
     },
@@ -56,10 +56,15 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "assets/auto-traffic-logo.ico",
       "signAndEditExecutable": false,
       "signtoolOptions": {
         "sign": null
       }
+    },
+    "nsis": {
+      "installerIcon": "assets/auto-traffic-logo.ico",
+      "uninstallerIcon": "assets/auto-traffic-logo.ico"
     },
     "npmRebuild": false,
     "electronFuses": {

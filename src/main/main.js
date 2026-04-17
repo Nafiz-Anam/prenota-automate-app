@@ -24,7 +24,7 @@ const CAPSOLVER_SETTINGS_FILE = path.join(
     "capsolver-settings.json",
 );
 
-const ICON_PATH = path.join(__dirname, "../../assets/icon.png");
+const ICON_PATH = path.join(__dirname, "../../assets/applogo.png");
 
 function redactAutomationConfigForLog(config) {
     if (!config || typeof config !== "object") return config;

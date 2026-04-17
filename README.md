@@ -1,4 +1,4 @@
-# Prenotafacile Automation
+# Auto Traffic
 
 A modern Electron + Playwright application for automating appointments on the Italian police website (prenotafacile.poliziadistato.it).
 
@@ -48,7 +48,7 @@ Create distributable packages:
 npm run build
 ```
 
-Optional Windows installer icon: add `assets/icon.ico` and set `build.win.icon` in `package.json` if desired. Window icon: add `assets/icon.png` (see `assets/README.txt`).
+App icon is `assets/applogo.png` (used for the Electron window and the Windows installer via `build.win.icon`). Replace that file to change branding.
 
 ## Project Structure
 

@@ -1,4 +1,4 @@
-class PrenotafacileApp {
+class AutoTrafficApp {
     constructor() {
         this.currentPage = "dashboard";
         this.accounts = [];
@@ -884,7 +884,7 @@ class PrenotafacileApp {
 
 // Initialize the app when DOM is loaded
 document.addEventListener("DOMContentLoaded", () => {
-    window.app = new PrenotafacileApp();
+    window.app = new AutoTrafficApp();
 });
 
 // Clean up on window unload
