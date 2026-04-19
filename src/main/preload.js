@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     saveAccounts: (accounts) => ipcRenderer.invoke("save-accounts", accounts),
     loadProxies: () => ipcRenderer.invoke("load-proxies"),
     saveProxies: (proxies) => ipcRenderer.invoke("save-proxies", proxies),
+    loadServices: () => ipcRenderer.invoke("load-services"),
+    saveServices: (services) => ipcRenderer.invoke("save-services", services),
 
     loadCapsolverSettings: () =>
         ipcRenderer.invoke("load-capsolver-settings"),

@@ -48,6 +48,13 @@
                 </svg>
                 Proxies
             </button>
+            <button class="nav-btn" data-page="services">
+                <svg class="nav-icon" viewBox="0 0 24 24">
+                    <path
+                        d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+                </svg>
+                Services
+            </button>
             <button class="nav-btn" data-page="capsolver">
                 <svg class="nav-icon" viewBox="0 0 24 24">
                     <path
@@ -86,10 +93,9 @@
                         <div class="form-group">
                             <label>Select Service</label>
                             <select id="serviceSelect" class="form-control">
-                                <option value="permesso-elettronico">Permesso elettronico</option>
-                                <option value="rinnovo-cartaceo">Rinnovo cartaceo</option>
-                                <option value="attesa-ricorso">Attesa ricorso</option>
+                                <!-- Options populated dynamically from Services list -->
                             </select>
+                            <p class="form-help">Manage available services in the <strong>Services</strong> tab.</p>
                         </div>
                     </div>
 
@@ -107,7 +113,15 @@
 
                     <!-- Timer Configuration -->
                     <div class="card">
-                        <h3>Schedule</h3>
+                        <div class="card-header-row">
+                            <h3>Schedule</h3>
+                            <div class="current-clock">
+                                <svg class="clock-icon" viewBox="0 0 24 24">
+                                    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/>
+                                </svg>
+                                <span id="clockDisplay">--:--:--</span>
+                            </div>
+                        </div>
                         <div class="timer-options">
                             <label class="radio-option">
                                 <input type="radio" name="timer" value="instant" checked>
@@ -132,7 +146,20 @@
                                 <input type="number" id="secondInput" min="0" max="59" placeholder="SS"
                                     class="time-input">
                             </div>
+                            <div class="time-countdown" id="timeCountdown" style="display: none;">
+                                <span class="countdown-label">Starts in</span>
+                                <span class="countdown-value" id="countdownDisplay">--:--:--</span>
+                            </div>
                         </div>
+                    </div>
+
+                    <!-- Proxy toggle -->
+                    <div class="card">
+                        <h3>Proxy</h3>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="useProxy" checked>
+                            <span>Use configured proxies for automation. Uncheck to run the browser with a <strong>direct connection</strong> (no proxy).</span>
+                        </label>
                     </div>
 
                     <!-- Captcha: extension only (no in-app API) -->
@@ -219,6 +246,37 @@
                 </div>
             </div>
 
+            <!-- Services Page -->
+            <div class="page" id="services-page">
+                <div class="page-header">
+                    <h2>Service Management</h2>
+                    <button id="addServiceBtn" class="btn btn-primary">
+                        <svg class="btn-icon" viewBox="0 0 24 24">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                        Add Service
+                    </button>
+                </div>
+
+                <p class="form-help">Each service has a <strong>name</strong> (shown in the Dashboard dropdown) and one or more <strong>phrases</strong> (used to find and click the matching row on the booking site). Put one phrase per line, most specific first.</p>
+
+                <div class="services-table-container">
+                    <table class="data-table" id="servicesTable">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Name</th>
+                                <th>Phrases</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="servicesTableBody">
+                            <!-- Services will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- CapSolver Page -->
             <div class="page" id="capsolver-page">
                 <div class="page-header">
@@ -258,7 +316,7 @@
     <!-- Modal Container -->
     <div id="modalContainer"></div>
 
-    <script src="renderer.js"></script>
+    <script type="module" src="renderer.js"></script>
 </body>
 
 </html>

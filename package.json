@@ -4,8 +4,8 @@
   "description": "Auto Traffic - Electron + Playwright",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
+    "start": "ELECTRON_RUN_AS_NODE= electron .",
+    "dev": "ELECTRON_RUN_AS_NODE= electron . --dev",
     "build": "electron-builder",
     "dist": "electron-builder --publish=never",
     "dist:win": "node scripts/close-built-app.js && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --publish=never"
@@ -20,7 +20,7 @@
   "license": "MIT",
   "devDependencies": {
     "cross-env": "^7.0.3",
-    "electron": "^41.1.1",
+    "electron": "^33.4.11",
     "electron-builder": "^26.8.1"
   },
   "dependencies": {
