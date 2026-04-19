@@ -143,8 +143,12 @@ export const AutomationUiMethods = {
         const selectedService = this.services.find(
             (s) => s.name === service,
         );
+        // Use service name as the exact match text.
+        // If phrases are configured, use them as override; otherwise fall back to name.
         const servicePhrases = selectedService
-            ? [...selectedService.phrases]
+            ? (selectedService.phrases && selectedService.phrases.length > 0
+                ? [...selectedService.phrases]
+                : [selectedService.name])
             : [];
         const timerMode = document.querySelector(
             'input[name="timer"]:checked',

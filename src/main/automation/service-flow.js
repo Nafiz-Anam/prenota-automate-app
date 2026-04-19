@@ -208,8 +208,19 @@ const ServiceFlowMethods = {
             for (const row of rows) {
                 const t = norm(row.innerText || row.textContent || "");
                 if (t.length < 5) continue;
-                // Exact match: row text must equal one of the phrases exactly.
-                if (!phraseList.some((p) => t === p)) continue;
+                // Row innerText includes button/icon text alongside service name.
+                // Use word-boundary-aware check: phrase must appear as a standalone
+                // block (not as a substring of a longer word run).
+                const matched = phraseList.some((p) => {
+                    if (!t.includes(p)) return false;
+                    const idx = t.indexOf(p);
+                    const before = idx === 0 ? "" : t[idx - 1];
+                    const after = idx + p.length >= t.length ? "" : t[idx + p.length];
+                    const edgeBefore = before === "" || /[\s,.()\-]/.test(before);
+                    const edgeAfter = after === "" || /[\s,.()\-]/.test(after);
+                    return edgeBefore && edgeAfter;
+                });
+                if (!matched) continue;
 
                 const clickable = row.querySelector(
                     "button, .v-btn, a.v-btn, [role='button']",

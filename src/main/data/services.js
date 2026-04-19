@@ -11,7 +11,7 @@ function normalizeService(raw) {
               .map((p) => (typeof p === "string" ? p.trim() : ""))
               .filter((p) => p.length > 0)
         : [];
-    if (!name || phrases.length === 0) return null;
+    if (!name) return null;
     return { name, phrases };
 }
 

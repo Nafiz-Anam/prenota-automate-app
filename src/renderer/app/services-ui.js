@@ -115,9 +115,9 @@ export const ServicesUiMethods = {
 
     async addService() {
         const { name, phrases } = this.parseServiceForm();
-        if (!name || phrases.length === 0) {
+        if (!name) {
             this.showNotification(
-                "Name and at least one phrase are required",
+                "Service name is required",
                 "error",
             );
             return;
@@ -174,9 +174,9 @@ export const ServicesUiMethods = {
 
     async updateService(index) {
         const { name, phrases } = this.parseServiceForm();
-        if (!name || phrases.length === 0) {
+        if (!name) {
             this.showNotification(
-                "Name and at least one phrase are required",
+                "Service name is required",
                 "error",
             );
             return;
