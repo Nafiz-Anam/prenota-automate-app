@@ -29,36 +29,37 @@ const ServiceFlowMethods = {
                 );
             });
 
-        // Prefer phrases from the user's Services config; fall back to built-ins.
+        // Phrases must come from user's Services config — no hardcoded fallback.
         const configPhrases = Array.isArray(config?.servicePhrases)
             ? config.servicePhrases.filter(
                   (p) => typeof p === "string" && p.trim().length > 0,
               )
             : [];
-        const phrases =
-            configPhrases.length > 0
-                ? configPhrases
-                : this.getServicePhrases(selectedService);
+
+        if (configPhrases.length === 0) {
+            console.log(
+                `[${accountLabel}] ERROR: No service phrases configured. Cannot select service.`,
+            );
+            return;
+        }
+
         console.log(
-            `[${accountLabel}] Service phrases:`,
-            phrases.slice(0, 2).join(" | "),
+            `[${accountLabel}] Service phrase (exact match): "${configPhrases[0]}"`,
         );
 
-        // Try pagination order (page 2, then page 1)
-        const paginationOrder = [2, 1];
+        // Page 1 first, then page 2 if not found.
+        const paginationOrder = [1, 2];
         const deadline = Date.now() + 120000;
 
         while (Date.now() < deadline) {
             const url = page.url();
             if (!url.toLowerCase().includes("prenotazione")) {
-                // Quick retry without delay
                 await new Promise((resolve) => setTimeout(resolve, 100));
                 continue;
             }
 
             let serviceClicked = false;
 
-            // STEP 7.2: Try each page in pagination order
             for (const pNum of paginationOrder) {
                 console.log(
                     `[${accountLabel}] STEP 7.2.${pNum}: Trying page ${pNum}...`,
@@ -68,13 +69,12 @@ const ServiceFlowMethods = {
                     `[${accountLabel}] Pagination -> ${pNum}: ${pagOk ? "ok" : "skip/fail"}`,
                 );
 
-                // STEP 7.3: Click service by phrases
                 serviceClicked = await this.clickServiceByPhrases(
                     page,
-                    phrases,
+                    configPhrases,
                 );
                 console.log(
-                    `[${accountLabel}] Service row click: ${serviceClicked ? "ok" : "fail"}`,
+                    `[${accountLabel}] Service row click on page ${pNum}: ${serviceClicked ? "ok" : "not found"}`,
                 );
                 if (serviceClicked) break;
             }
@@ -83,7 +83,6 @@ const ServiceFlowMethods = {
                 continue;
             }
 
-            // Wait for page to stabilize
             try {
                 await page
                     .waitForLoadState("domcontentloaded", { timeout: 3000 })
@@ -92,7 +91,6 @@ const ServiceFlowMethods = {
                 // Continue even if wait fails
             }
 
-            // STEP 7.4: Click duplicato radio button
             console.log(
                 `[${accountLabel}] STEP 7.4: Clicking duplicato radio button...`,
             );
@@ -104,7 +102,6 @@ const ServiceFlowMethods = {
                 continue;
             }
 
-            // STEP 7.5: Click AVANTI button to proceed to booking flow
             console.log(
                 `[${accountLabel}] STEP 7.5: Clicking AVANTI button to proceed...`,
             );
@@ -117,11 +114,9 @@ const ServiceFlowMethods = {
                     `[${accountLabel}] Service selection completed - Starting booking flow...`,
                 );
 
-                // Wait until scheduled time (if configured) before booking flow.
                 await this.waitUntilScheduledTime(config, accountLabel);
                 if (this.stopFlag) return;
 
-                // STEP 8: Start the booking flow (from extension logic)
                 await this.completeBookingFlow(page, accountLabel, config);
                 return;
             }
@@ -130,32 +125,6 @@ const ServiceFlowMethods = {
         console.log(
             `[${accountLabel}] Service flow not completed within timeout`,
         );
-    },
-
-    // Fallback phrases for the three built-in services. Used when the user's
-    // Services list is empty or missing phrases for the selected key.
-    getServicePhrases(selectedService) {
-        const key = (selectedService || "").trim().toLowerCase();
-        if (key.includes("rinnovo")) {
-            return [
-                "rinnovo permesso di soggiorno cartaceo per richiesta asilo",
-                "rinnovo permesso di soggiorno cartaceo",
-                "richiesta asilo",
-            ];
-        }
-        if (key.includes("attesa")) {
-            return [
-                "permesso di soggiorno per attesa ricorso pendente ex art. 35",
-                "permesso di soggiorno per attesa ricorso",
-                "attesa ricorso",
-            ];
-        }
-        // permesso-elettronico
-        return [
-            "permesso di soggiorno elettronico (protezione sussidiaria",
-            "permesso di soggiorno elettronico",
-            "permesso elettronico",
-        ];
     },
 
     async clickPaginationNumber(page, number) {
@@ -208,92 +177,12 @@ const ServiceFlowMethods = {
         }, n);
     },
 
+    // Exact full-text match only — no partial/substring/fallback matching.
     async clickServiceByPhrases(page, phrases) {
-        const main = page
-            .locator("main, .v-main, .v-application--wrap, #app")
-            .first();
-
-        // 0) Flexible line match for the *current* service only (avoid wrong row).
-        const hint = (phrases[0] || "").toLowerCase();
-        const flexPatterns = [];
-        if (hint.includes("rinnovo")) {
-            flexPatterns.push(
-                /rinnovo\s+permesso\s+di\s+soggiorno\s+cartaceo[^\n]*/i,
-            );
-        }
-        if (hint.includes("attesa")) {
-            flexPatterns.push(
-                /permesso\s+di\s+soggiorno\s+per\s+attesa\s+ricorso[^\n]*/i,
-            );
-        }
-        if (hint.includes("elettronico") || hint.includes("protezione")) {
-            flexPatterns.push(
-                /permesso\s+di\s+soggiorno\s+elettronico[^\n]*\(protezione[^\n]*/i,
-            );
-        }
-        for (const flex of flexPatterns) {
-            try {
-                const hit = main.getByText(flex).first();
-                await hit.waitFor({ state: "visible", timeout: 5000 });
-                await hit.scrollIntoViewIfNeeded().catch(() => {});
-                await hit.click({ force: true, timeout: 5000 });
-                return true;
-            } catch {
-                /* next */
-            }
-        }
-
-        // 1) Click visible text node inside main app (avoid header/footer duplicates).
-        for (const phrase of phrases) {
-            if (!phrase || phrase.length < 10) continue;
-            try {
-                const re = new RegExp(
-                    phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-                    "i",
-                );
-                const byText = main.getByText(re).first();
-                await byText.waitFor({ state: "visible", timeout: 6000 });
-                await byText.scrollIntoViewIfNeeded().catch(() => {});
-                await byText.click({ force: true, timeout: 5000 });
-                return true;
-            } catch {
-                /* next phrase */
-            }
-        }
-
-        // 2) Row / list-item filter (Vuetify).
-        for (const phrase of phrases) {
-            if (!phrase || phrase.length < 10) continue;
-            const esc = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const re = new RegExp(esc, "i");
-            try {
-                const row = main
-                    .locator(
-                        "[class*='caselle'] .row, .caselleservizi .row, .v-banner-on-hover, .v-list-item, [role='listitem'], .v-stepper__content .row",
-                    )
-                    .filter({ hasText: re })
-                    .first();
-                await row.waitFor({ state: "visible", timeout: 5000 });
-                const chevron = row
-                    .locator(".v-btn, button, a, [class*='mdi-chevron'], span")
-                    .last();
-                try {
-                    await chevron.click({ force: true, timeout: 3000 });
-                } catch {
-                    await row.click({ force: true });
-                }
-                return true;
-            } catch {
-                /* next phrase */
-            }
-        }
-
         const clicked = await page.evaluate((rawPhrases) => {
             const norm = (s) =>
                 (s || "").toLowerCase().replace(/\s+/g, " ").trim();
-            const phraseList = rawPhrases
-                .map(norm)
-                .filter((p) => p.length >= 10);
+            const phraseList = rawPhrases.map(norm).filter((p) => p.length > 0);
 
             const rowSelectors = [
                 ".caselleservizi .row",
@@ -305,15 +194,22 @@ const ServiceFlowMethods = {
                 "main .row",
             ];
 
+            const seen = new Set();
             const rows = [];
             for (const sel of rowSelectors) {
-                document.querySelectorAll(sel).forEach((el) => rows.push(el));
+                document.querySelectorAll(sel).forEach((el) => {
+                    if (!seen.has(el)) {
+                        seen.add(el);
+                        rows.push(el);
+                    }
+                });
             }
 
-            for (const row of [...new Set(rows)]) {
+            for (const row of rows) {
                 const t = norm(row.innerText || row.textContent || "");
-                if (t.length < 15 || t.length > 3000) continue;
-                if (!phraseList.some((p) => t.includes(p))) continue;
+                if (t.length < 5) continue;
+                // Exact match: row text must equal one of the phrases exactly.
+                if (!phraseList.some((p) => t === p)) continue;
 
                 const clickable = row.querySelector(
                     "button, .v-btn, a.v-btn, [role='button']",
@@ -334,7 +230,6 @@ const ServiceFlowMethods = {
     },
 
     async clickDuplicato(page) {
-        // Duplicato is a radio in group name="tipologia"; value varies (2 vs 3, etc.) - never hardcode value.
         const playwrightTries = [
             async () => {
                 await page

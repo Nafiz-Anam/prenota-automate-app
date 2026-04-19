@@ -1,32 +1,7 @@
 const fs = require("node:fs");
 const { SERVICES_FILE } = require("./paths.js");
 
-const DEFAULT_SERVICES = [
-    {
-        name: "Permesso elettronico",
-        phrases: [
-            "permesso di soggiorno elettronico (protezione sussidiaria",
-            "permesso di soggiorno elettronico",
-            "permesso elettronico",
-        ],
-    },
-    {
-        name: "Rinnovo cartaceo",
-        phrases: [
-            "rinnovo permesso di soggiorno cartaceo per richiesta asilo",
-            "rinnovo permesso di soggiorno cartaceo",
-            "richiesta asilo",
-        ],
-    },
-    {
-        name: "Attesa ricorso",
-        phrases: [
-            "permesso di soggiorno per attesa ricorso pendente ex art. 35",
-            "permesso di soggiorno per attesa ricorso",
-            "attesa ricorso",
-        ],
-    },
-];
+const DEFAULT_SERVICES = [];
 
 function normalizeService(raw) {
     if (!raw || typeof raw !== "object") return null;

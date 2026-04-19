@@ -255,7 +255,6 @@ export const AutomationUiMethods = {
                     ) {
                         const target = new Date();
                         target.setHours(tH, tM, tS, 0);
-                        if (target <= now) target.setDate(target.getDate() + 1);
 
                         const diffS = Math.max(
                             0,
