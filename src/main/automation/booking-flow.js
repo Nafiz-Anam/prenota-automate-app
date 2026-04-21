@@ -1,6 +1,4 @@
-const {
-    resolveAutomationExtensionDir,
-} = require("./extension-loader.js");
+const { resolveAutomationExtensionDir } = require("./extension-loader.js");
 const {
     isRecaptchaEnterpriseQuotaBlocked,
     logRecaptchaSiteQuotaBlocked,
@@ -43,17 +41,117 @@ const BookingFlowMethods = {
             },
         ];
 
-        // Go back one page in the browser history; fall back to navigating to
-        // the booking start if goBack() throws (e.g. no history entry).
+        // Try to go back using INDIETRO button first, then browser back, then navigate to start
         const goBackOnePage = async () => {
-            await page.goBack({ timeout: 10000 }).catch(async () => {
-                await page
-                    .goto(PRENOTAZIONE_URL, {
-                        waitUntil: "commit",
-                        timeout: 30000,
-                    })
-                    .catch(() => {});
+            // Always try to find and click INDIETRO button first
+            const indietroClicked = await page.evaluate(() => {
+                // Try multiple selectors to find INDIETRO button
+                const selectors = [
+                    "button",
+                    ".v-btn",
+                    "[role='button']",
+                    "a.v-btn",
+                    ".v-btn--contained",
+                    ".v-btn--elevated",
+                ];
+
+                let indietroBtn = null;
+
+                // Search through all possible button elements
+                for (const selector of selectors) {
+                    const buttons = [...document.querySelectorAll(selector)];
+                    indietroBtn = buttons.find((btn) => {
+                        const text = (btn.innerText || btn.textContent || "")
+                            .trim()
+                            .toUpperCase();
+                        return text === "INDIETRO" || text.includes("INDIETRO");
+                    });
+                    if (indietroBtn) break;
+                }
+
+                // Additional fallback - search by exact text match
+                if (!indietroBtn) {
+                    const allElements = [...document.querySelectorAll("*")];
+                    indietroBtn = allElements.find((el) => {
+                        const text = (
+                            el.innerText ||
+                            el.textContent ||
+                            ""
+                        ).trim();
+                        return (
+                            text.toUpperCase() === "INDIETRO" &&
+                            (el.tagName === "BUTTON" ||
+                                el.tagName === "A" ||
+                                el.getAttribute("role") === "button")
+                        );
+                    });
+                }
+
+                if (!indietroBtn) {
+                    console.log("INDIETRO button not found on page");
+                    return false;
+                }
+
+                // Check if button is visible and enabled
+                const style = window.getComputedStyle(indietroBtn);
+                if (
+                    style.display === "none" ||
+                    style.visibility === "hidden" ||
+                    style.opacity === "0" ||
+                    indietroBtn.disabled
+                ) {
+                    console.log(
+                        "INDIETRO button found but not visible or enabled",
+                    );
+                    return false;
+                }
+
+                // Scroll button into view to ensure it's clickable
+                indietroBtn.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                });
+
+                // Wait a moment for scroll to complete
+                setTimeout(() => {
+                    // Use real mouse events like other button clicks in this codebase
+                    const r = indietroBtn.getBoundingClientRect();
+                    ["mousedown", "mouseup", "click"].forEach((t) =>
+                        indietroBtn.dispatchEvent(
+                            new MouseEvent(t, {
+                                bubbles: true,
+                                cancelable: true,
+                                clientX: r.left + r.width / 2,
+                                clientY: r.top + r.height / 2,
+                            }),
+                        ),
+                    );
+                }, 200);
+
+                return true;
             });
+
+            if (indietroClicked) {
+                console.log(
+                    `[${accountLabel}] Successfully clicked INDIETRO button to go back`,
+                );
+            } else {
+                console.log(
+                    `[${accountLabel}] INDIETRO button not available, falling back to browser back`,
+                );
+                // Fall back to browser back button
+                await page.goBack({ timeout: 10000 }).catch(async () => {
+                    console.log(
+                        `[${accountLabel}] Browser back failed, navigating to booking start`,
+                    );
+                    await page
+                        .goto(PRENOTAZIONE_URL, {
+                            waitUntil: "commit",
+                            timeout: 30000,
+                        })
+                        .catch(() => {});
+                });
+            }
             await new Promise((r) => setTimeout(r, 1500));
         };
 
@@ -331,217 +429,284 @@ const BookingFlowMethods = {
             resolveAutomationExtensionDir(config),
         );
 
-        // Handle checkbox first - CAPTCHA appears after this
-        await this.ensureCheckbox(page);
+        // Retry logic for automatic redirects - up to 3 attempts
+        const MAX_FINAL_RETRIES = 3;
 
-        // Wait a moment for CAPTCHA to appear after checkbox click
-        console.log(
-            `[${accountLabel}] Waiting for CAPTCHA to appear after checkbox click...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-
-        // Scroll to bottom to ensure CAPTCHA is visible
-        await page.evaluate(() =>
-            window.scrollTo({
-                top: document.body.scrollHeight,
-                behavior: "smooth",
-            }),
-        );
-
-        // Additional wait for dynamic CAPTCHA loading
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        if (await isRecaptchaEnterpriseQuotaBlocked(page)) {
-            if (chromiumExtensionLoaded) {
-                console.warn(
-                    `[${accountLabel}] reCAPTCHA quota warning on page; continuing because a Chromium extension path is configured (solve in-browser).`,
-                );
-            } else {
-                logRecaptchaSiteQuotaBlocked(accountLabel);
-                return;
-            }
-        }
-
-        console.log(
-            `[${accountLabel}] Checking for CAPTCHA after checkbox interaction...`,
-        );
-
-        // First, check if there's actually a CAPTCHA on the page
-        const hasCaptcha = await page.evaluate(() => {
-            // Look for any CAPTCHA-related elements
-            const captchaElements = document.querySelectorAll(
-                '[class*="recaptcha"], [class*="g-recaptcha"], [class*="captcha"], iframe[src*="recaptcha"], div[id*="recaptcha"], div[id*="captcha"]',
-            );
-            const captchaIframes = Array.from(
-                document.querySelectorAll("iframe"),
-            ).filter(
-                (iframe) =>
-                    iframe.src &&
-                    (iframe.src.includes("recaptcha") ||
-                        iframe.src.includes("captcha")),
-            );
-
+        for (let attempt = 1; attempt <= MAX_FINAL_RETRIES; attempt++) {
             console.log(
-                `CAPTCHA detection: ${captchaElements.length} elements, ${captchaIframes.length} iframes`,
-            );
-            return captchaElements.length > 0 || captchaIframes.length > 0;
-        });
-
-        if (!hasCaptcha) {
-            console.log(
-                `[${accountLabel}] No CAPTCHA detected after checkbox click; waiting for PRENOTA anyway...`,
-            );
-        } else if (chromiumExtensionLoaded) {
-            console.log(
-                `[${accountLabel}] Waiting for the CapSolver extension to solve reCAPTCHA in-page; then PRENOTA will enable.`,
-            );
-        } else {
-            console.warn(
-                `[${accountLabel}] No unpacked extension path — add the CapSolver folder under CapSolver settings (or project root). You can still complete CAPTCHA manually; waiting for PRENOTA...`,
-            );
-        }
-
-        // Start background helper: once extension delivers the token it may not
-        // fire Vue's reactive callback automatically (reCAPTCHA Enterprise /
-        // invisible widgets store callbacks differently). This loop watches for
-        // a non-empty g-recaptcha-response and manually triggers every known
-        // callback path so the Vue form registers the solved state.
-        if (hasCaptcha) {
-            this._forceCaptchaTokenApply(page, accountLabel).catch(() => {});
-        }
-
-        // Wait for PRENOTA (enabled after extension solves or you solve manually)
-        console.log(
-            `[${accountLabel}] Waiting for PRENOTA button to become enabled...`,
-        );
-
-        try {
-            // The PRENOTA button on this site is never disabled via DOM
-            // attributes — it always has class "success" (green). The real
-            // gate is the g-recaptcha-response token: once the extension
-            // delivers the token and _forceCaptchaTokenApply fires the Vue
-            // callback, the form accepts the click. So we wait for the token.
-            console.log(
-                `[${accountLabel}] Waiting for g-recaptcha-response token (captcha solved)...`,
-            );
-            await page.waitForFunction(
-                () => {
-                    const tas = document.querySelectorAll(
-                        'textarea[name="g-recaptcha-response"]',
-                    );
-                    for (const ta of tas) {
-                        if (ta.value && ta.value.trim().length > 20)
-                            return true;
-                    }
-                    return false;
-                },
-                undefined,
-                { timeout: 300000 }, // 5-minute cap; captcha solving varies
-            );
-            console.log(
-                `[${accountLabel}] Captcha token confirmed in DOM, proceeding to click PRENOTA.`,
+                `[${accountLabel}] Final step attempt ${attempt}/${MAX_FINAL_RETRIES}`,
             );
 
-            // Give Vue one tick to process the callback before we click
-            await new Promise((resolve) => setTimeout(resolve, 1500));
-
-            console.log(
-                `[${accountLabel}] PRENOTA control is enabled, clicking to complete booking...`,
-            );
-
-            // Two PRENOTA buttons exist in DOM — one visible (success/green),
-            // one hidden (display:none). Use real Playwright click (isTrusted=true)
-            // so Vue form handlers accept the event; synthetic events are rejected.
-            const prenotaLoc = page
-                .locator("button, .v-btn, [role='button']")
-                .filter({ hasText: /\bPRENOTA\b/i, visible: true })
-                .first();
             try {
-                await prenotaLoc.scrollIntoViewIfNeeded({ timeout: 5000 });
-                await prenotaLoc.click({ timeout: 15000 });
-            } catch (_) {
-                // Fallback: synthetic click if Playwright locator fails
-                await page.evaluate(() => {
-                    const nodes = [
-                        ...document.querySelectorAll(
-                            "button, .v-btn, [role='button']",
-                        ),
-                    ];
-                    const btn = nodes.find((el) => {
-                        if (!/\bPRENOTA\b/i.test(el.textContent || ""))
-                            return false;
-                        const style = window.getComputedStyle(el);
-                        return (
-                            style.display !== "none" &&
-                            style.visibility !== "hidden" &&
-                            style.opacity !== "0"
-                        );
-                    });
-                    if (btn) {
-                        btn.scrollIntoView({ block: "center" });
-                        btn.click();
-                    }
-                });
-            }
-            console.log(
-                `[${accountLabel}] PRENOTA button clicked successfully!`,
-            );
+                // Handle checkbox first - CAPTCHA appears after this
+                await this.ensureCheckbox(page);
 
-            // Wait up to 45s for "Complimenti!" success page
-            // (server-side captcha verification + DB write takes several seconds)
-            const booked = await page
-                .waitForFunction(
-                    () => {
-                        const t =
-                            document.body.innerText ||
-                            document.body.textContent ||
-                            "";
-                        return (
-                            t.includes("Complimenti") ||
-                            t.includes("prenotazione è stata inserita") ||
-                            t.includes("Prenotazione N.")
+                // Wait a moment for CAPTCHA to appear after checkbox click
+                console.log(
+                    `[${accountLabel}] Waiting for CAPTCHA to appear after checkbox click...`,
+                );
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+
+                // Scroll to bottom to ensure CAPTCHA is visible
+                await page.evaluate(() =>
+                    window.scrollTo({
+                        top: document.body.scrollHeight,
+                        behavior: "smooth",
+                    }),
+                );
+
+                // Additional wait for dynamic CAPTCHA loading
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+
+                if (await isRecaptchaEnterpriseQuotaBlocked(page)) {
+                    if (chromiumExtensionLoaded) {
+                        console.warn(
+                            `[${accountLabel}] reCAPTCHA quota warning on page; continuing because a Chromium extension path is configured (solve in-browser).`,
                         );
+                    } else {
+                        logRecaptchaSiteQuotaBlocked(accountLabel);
+                        return false;
+                    }
+                }
+
+                console.log(
+                    `[${accountLabel}] Checking for CAPTCHA after checkbox interaction...`,
+                );
+
+                // First, check if there's actually a CAPTCHA on the page
+                const hasCaptcha = await page.evaluate(() => {
+                    // Look for any CAPTCHA-related elements
+                    const captchaElements = document.querySelectorAll(
+                        '[class*="recaptcha"], [class*="g-recaptcha"], [class*="captcha"], iframe[src*="recaptcha"], div[id*="recaptcha"], div[id*="captcha"]',
+                    );
+                    const captchaIframes = Array.from(
+                        document.querySelectorAll("iframe"),
+                    ).filter(
+                        (iframe) =>
+                            iframe.src &&
+                            (iframe.src.includes("recaptcha") ||
+                                iframe.src.includes("captcha")),
+                    );
+
+                    console.log(
+                        `CAPTCHA detection: ${captchaElements.length} elements, ${captchaIframes.length} iframes`,
+                    );
+                    return (
+                        captchaElements.length > 0 || captchaIframes.length > 0
+                    );
+                });
+
+                if (!hasCaptcha) {
+                    console.log(
+                        `[${accountLabel}] No CAPTCHA detected after checkbox click; waiting for PRENOTA anyway...`,
+                    );
+                } else if (chromiumExtensionLoaded) {
+                    console.log(
+                        `[${accountLabel}] Waiting for the CapSolver extension to solve reCAPTCHA in-page; then PRENOTA will enable.`,
+                    );
+                } else {
+                    console.warn(
+                        `[${accountLabel}] No unpacked extension path - add the CapSolver folder under CapSolver settings (or project root). You can still complete CAPTCHA manually; waiting for PRENOTA...`,
+                    );
+                }
+
+                // Start background helper: once extension delivers the token it may not
+                // fire Vue's reactive callback automatically (reCAPTCHA Enterprise /
+                // invisible widgets store callbacks differently). This loop watches for
+                // a non-empty g-recaptcha-response and manually triggers every known
+                // callback path so the Vue form registers the solved state.
+                if (hasCaptcha) {
+                    this._forceCaptchaTokenApply(page, accountLabel).catch(
+                        () => {},
+                    );
+                }
+
+                // Wait for PRENOTA (enabled after extension solves or you solve manually)
+                console.log(
+                    `[${accountLabel}] Waiting for PRENOTA button to become enabled...`,
+                );
+
+                // The PRENOTA button on this site is never disabled via DOM
+                // attributes - it always has class "success" (green). The real
+                // gate is the g-recaptcha-response token: once the extension
+                // delivers the token and _forceCaptchaTokenApply fires the Vue
+                // callback, the form accepts the click. So we wait for the token.
+                console.log(
+                    `[${accountLabel}] Waiting for g-recaptcha-response token (captcha solved)...`,
+                );
+                await page.waitForFunction(
+                    () => {
+                        const tas = document.querySelectorAll(
+                            'textarea[name="g-recaptcha-response"]',
+                        );
+                        for (const ta of tas) {
+                            if (ta.value && ta.value.trim().length > 20)
+                                return true;
+                        }
+                        return false;
                     },
                     undefined,
-                    { timeout: 45000 },
-                )
-                .then(() => true)
-                .catch(() => false);
+                    { timeout: 300000 }, // 5-minute cap; captcha solving varies
+                );
+                console.log(
+                    `[${accountLabel}] Captcha token confirmed in DOM, proceeding to click PRENOTA.`,
+                );
 
-            if (booked) {
-                const bookingNum = await page
-                    .evaluate(() => {
-                        const m = (
-                            document.body.innerText || ""
-                        ).match(/Prenotazione N\.\s*([\w-]+)/);
-                        return m ? m[1] : null;
-                    })
-                    .catch(() => null);
-                console.log(
-                    `[${accountLabel}] BOOKING SUCCESS! Ref: ${bookingNum || "unknown"}`,
-                );
-                return true;
-            }
+                // Give Vue one tick to process the callback before we click
+                await new Promise((resolve) => setTimeout(resolve, 1500));
 
-            // Check if site redirected back to an earlier step (server rejected captcha)
-            const currentUrl = page.url();
-            if (currentUrl.includes("/prenotazione") && !currentUrl.includes("step=5") && !currentUrl.includes("step=6")) {
                 console.log(
-                    `[${accountLabel}] Site redirected back to earlier step (captcha rejected or session issue). URL: ${currentUrl}`,
+                    `[${accountLabel}] PRENOTA control is enabled, clicking to complete booking...`,
                 );
-            } else {
+
+                // Two PRENOTA buttons exist in DOM - one visible (success/green),
+                // one hidden (display:none). Use real Playwright click (isTrusted=true)
+                // so Vue form handlers accept the event; synthetic events are rejected.
+                const prenotaLoc = page
+                    .locator("button, .v-btn, [role='button']")
+                    .filter({ hasText: /\bPRENOTA\b/i, visible: true })
+                    .first();
+                try {
+                    await prenotaLoc.scrollIntoViewIfNeeded({ timeout: 5000 });
+                    await prenotaLoc.click({ timeout: 15000 });
+                } catch (_) {
+                    // Fallback: synthetic click if Playwright locator fails
+                    await page.evaluate(() => {
+                        const nodes = [
+                            ...document.querySelectorAll(
+                                "button, .v-btn, [role='button']",
+                            ),
+                        ];
+                        const btn = nodes.find((el) => {
+                            if (!/\bPRENOTA\b/i.test(el.textContent || ""))
+                                return false;
+                            const style = window.getComputedStyle(el);
+                            return (
+                                style.display !== "none" &&
+                                style.visibility !== "hidden" &&
+                                style.opacity !== "0"
+                            );
+                        });
+                        if (btn) {
+                            btn.scrollIntoView({ block: "center" });
+                            btn.click();
+                        }
+                    });
+                }
                 console.log(
-                    `[${accountLabel}] Success page not detected after PRENOTA click.`,
+                    `[${accountLabel}] PRENOTA button clicked successfully!`,
                 );
+
+                // Wait up to 3 minutes for "Complimenti!" success page
+                // (server-side captcha verification + DB write can take up to 3 minutes)
+                const booked = await page
+                    .waitForFunction(
+                        () => {
+                            const t =
+                                document.body.innerText ||
+                                document.body.textContent ||
+                                "";
+                            return (
+                                t.includes("Complimenti") ||
+                                t.includes("prenotazione è stata inserita") ||
+                                t.includes("Prenotazione N.")
+                            );
+                        },
+                        undefined,
+                        { timeout: 180000 }, // 3 minutes
+                    )
+                    .then(() => true)
+                    .catch(() => false);
+
+                if (booked) {
+                    const bookingNum = await page
+                        .evaluate(() => {
+                            const m = (document.body.innerText || "").match(
+                                /Prenotazione N\.\s*([\w-]+)/,
+                            );
+                            return m ? m[1] : null;
+                        })
+                        .catch(() => null);
+                    console.log(
+                        `[${accountLabel}] BOOKING SUCCESS! Ref: ${bookingNum || "unknown"}`,
+                    );
+                    return true;
+                }
+
+                // Check if site redirected back to an earlier step (server rejected captcha or automatic cancellation)
+                // Since it's a Vue.js SPA, URL doesn't change - we rely on page content only
+                const pageContent = await page.evaluate(
+                    () => document.body.innerText,
+                );
+
+                // Check for redirect indicators based on page content (SPA navigation)
+                const isRedirected =
+                    pageContent.includes("Seleziona la struttura") ||
+                    pageContent.includes("Seleziona la data") ||
+                    pageContent.includes("Informazioni aggiuntive") ||
+                    pageContent.includes("Seleziona la struttura") ||
+                    pageContent.includes("Seleziona l'orario");
+
+                if (isRedirected) {
+                    console.log(
+                        `[${accountLabel}] Site redirected back to earlier step (attempt ${attempt}/${MAX_FINAL_RETRIES}).`,
+                    );
+
+                    if (attempt < MAX_FINAL_RETRIES) {
+                        console.log(
+                            `[${accountLabel}] Retrying final step from the redirected page...`,
+                        );
+                        // Wait a moment before retrying
+                        await new Promise((resolve) =>
+                            setTimeout(resolve, 2000),
+                        );
+                        continue; // Continue to next attempt
+                    } else {
+                        console.log(
+                            `[${accountLabel}] Maximum retry attempts (${MAX_FINAL_RETRIES}) exhausted.`,
+                        );
+                    }
+                } else {
+                    console.log(
+                        `[${accountLabel}] Success page not detected after PRENOTA click (attempt ${attempt}/${MAX_FINAL_RETRIES}).`,
+                    );
+                    if (attempt < MAX_FINAL_RETRIES) {
+                        console.log(`[${accountLabel}] Retrying final step...`);
+                        // Wait a moment before retrying
+                        await new Promise((resolve) =>
+                            setTimeout(resolve, 2000),
+                        );
+                        continue; // Continue to next attempt
+                    }
+                }
+
+                return false; // All attempts exhausted
+            } catch (error) {
+                console.error(
+                    `[${accountLabel}] Error in final step attempt ${attempt}:`,
+                    error.message,
+                );
+
+                if (attempt < MAX_FINAL_RETRIES) {
+                    console.log(
+                        `[${accountLabel}] Retrying final step after error...`,
+                    );
+                    // Wait a moment before retrying
+                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                    continue; // Continue to next attempt
+                } else {
+                    console.log(
+                        `[${accountLabel}] Maximum retry attempts exhausted due to errors.`,
+                    );
+                    return false;
+                }
             }
-            return false;
-        } catch (error) {
-            console.error(
-                `[${accountLabel}] Error with PRENOTA button:`,
-                error.message,
-            );
-            return false;
         }
+
+        console.log(
+            `[${accountLabel}] All ${MAX_FINAL_RETRIES} final step attempts exhausted.`,
+        );
+        return false;
     },
 
     async clickAvanti(page) {
