@@ -65,7 +65,9 @@ const AccountRunnerMethods = {
             sessions = accounts
                 .slice(0, maxSessions)
                 .map((account) => ({ account, proxy: null }));
-            console.log("Proxy disabled — using direct connection for all windows");
+            console.log(
+                "Proxy disabled — using direct connection for all windows",
+            );
         }
 
         console.log(
@@ -161,8 +163,7 @@ const AccountRunnerMethods = {
                     contextOptions,
                     extArgs,
                     {
-                        useChromeChannel:
-                            config?.useChromeChannel === true,
+                        useChromeChannel: config?.useChromeChannel === true,
                     },
                 );
                 browser = context.browser();
@@ -181,10 +182,11 @@ const AccountRunnerMethods = {
 
             this.browsers.set(browserId, { browser, context });
 
-            winLog(`STEP 2: Browser context ready (extension=${Boolean(extDir)})`);
+            winLog(
+                `STEP 2: Browser context ready (extension=${Boolean(extDir)})`,
+            );
 
-            const page =
-                context.pages()[0] || (await context.newPage());
+            const page = context.pages()[0] || (await context.newPage());
 
             // Block unnecessary resources for faster loading
             await page.route("**/*.{png,jpg,jpeg,gif,svg,ico,webp}", (route) =>
@@ -207,8 +209,100 @@ const AccountRunnerMethods = {
             page.setDefaultNavigationTimeout(60000);
             page.setDefaultTimeout(30000);
 
-            // STEP 3+4: Navigate directly to login page (skip redundant root nav)
-            winLog("STEP 3: Navigating to login page...");
+            // STEP 3: Validate proxy connectivity with smart retry logic
+            winLog("STEP 3: Validating proxy connectivity with retry logic...");
+            if (proxy) {
+                let currentProxy = { ...proxy };
+                let proxyWorking = false;
+                let attemptCount = 0;
+                const MAX_PROXY_RETRIES = 3;
+
+                // Try multiple proxy configurations for this account
+                for (attemptCount = 0; attemptCount < MAX_PROXY_RETRIES; attemptCount++) {
+                    console.log(`[${account.username}] Proxy attempt ${attemptCount + 1}/${MAX_PROXY_RETRIES}: ${currentProxy.host}:${currentProxy.port}`);
+                    
+                    proxyWorking = await this.validateProxyConnectivity(
+                        page,
+                        currentProxy,
+                    );
+                    
+                    if (proxyWorking) {
+                        console.log(
+                            `[${account.username}] Proxy validation successful: ${currentProxy.host}:${currentProxy.port}`,
+                        );
+                        break; // Success - use this proxy
+                    } else {
+                        console.error(
+                            `[${account.username}] Proxy attempt ${attemptCount + 1} failed: ${currentProxy.host}:${currentProxy.port}`,
+                        );
+                        
+                        // Try next proxy variation
+                        const nextProxy = this.getNextProxyVariation(currentProxy, attemptCount);
+                        if (nextProxy) {
+                            currentProxy = nextProxy;
+                            console.log(`[${account.username}] Trying next proxy variation: ${nextProxy.host}:${nextProxy.port}`);
+                            
+                            // Close current browser and create new one with new proxy
+                            try {
+                                if (browser && context) {
+                                    await context.close();
+                                    await browser.close();
+                                }
+                            } catch (closeError) {
+                                console.error(`[${account.username}] Error closing browser: ${closeError.message}`);
+                            }
+                            
+                            // Launch new browser with updated proxy
+                            browser = await chromium.launch({
+                                headless: false,
+                                javaScriptEnabled: true,
+                                bypassCSP: true,
+                                args: baseArgs,
+                                proxy: buildPlaywrightProxyConfig(currentProxy),
+                            });
+                            
+                            context = await browser.newContext({
+                                javaScriptEnabled: true,
+                                bypassCSP: true,
+                            });
+                            
+                            page = await context.newPage();
+                            
+                            // Re-apply page settings
+                            await page.route("**/*ads*", (route) => route.abort());
+                            await page.route("**/*tracking*", (route) => route.abort());
+                            await page.route("**/*facebook*", (route) => route.abort());
+                            await page.route("**/*google-analytics*", (route) => route.abort());
+                            await page.route("**/*doubleclick*", (route) => route.abort());
+                            page.setDefaultNavigationTimeout(60000);
+                            page.setDefaultTimeout(30000);
+                            
+                            console.log(`[${account.username}] New browser launched with proxy: ${currentProxy.host}:${currentProxy.port}`);
+                            
+                        } catch (launchError) {
+                            console.error(`[${account.username}] Error launching new browser: ${launchError.message}`);
+                            break; // Exit retry loop on launch failure
+                        }
+                    } else {
+                        console.log(`[${account.username}] No more proxy variations available`);
+                        break;
+                    }
+                }
+
+                if (!proxyWorking) {
+                    console.error(
+                        `[${account.username}] All ${MAX_PROXY_RETRIES} proxy attempts failed for account ${account.username} - marking account as failed`,
+                    );
+                    return; // Skip this account and continue with next
+                }
+            } else {
+                console.log(
+                    `[${account.username}] Using direct connection (no proxy)`,
+                );
+            }
+
+            // STEP 4+5: Navigate directly to login page (skip redundant root nav)
+            winLog("STEP 4: Navigating to login page...");
             await this.gotoWithRetry(page, LOGIN_URL, account.username).catch(
                 (err) =>
                     console.error(
@@ -322,7 +416,10 @@ const AccountRunnerMethods = {
                     context
                         .close()
                         .catch((error) =>
-                            console.error("Error closing browser context:", error),
+                            console.error(
+                                "Error closing browser context:",
+                                error,
+                            ),
                         ),
                 );
             }
@@ -341,6 +438,78 @@ const AccountRunnerMethods = {
             browsers: Array.from(this.browsers.keys()),
             count: this.browsers.size,
         };
+    },
+
+    getNextProxyVariation(currentProxy, attemptCount) {
+        // Generate alternative proxy configurations based on attempt number
+        const variations = [
+            // Try different ports on same host
+            { host: currentProxy.host, port: parseInt(currentProxy.port) + 1 },
+            { host: currentProxy.host, port: parseInt(currentProxy.port) + 2 },
+            { host: currentProxy.host, port: parseInt(currentProxy.port) - 1 },
+            { host: currentProxy.host, port: parseInt(currentProxy.port) - 2 },
+            // Try common alternative ports
+            { host: currentProxy.host, port: 8080 },
+            { host: currentProxy.host, port: 3128 },
+            { host: currentProxy.host, port: 8888 },
+            { host: currentProxy.host, port: 9000 },
+            // Try different common proxy hosts if original fails completely
+            { host: "proxy1.example.com", port: currentProxy.port },
+            { host: "proxy2.example.com", port: currentProxy.port },
+            { host: "backup.proxy.com", port: currentProxy.port },
+        ];
+        
+        return variations[attemptCount % variations.length];
+    },
+
+    async validateProxyConnectivity(page, proxy) {
+        try {
+            console.log(
+                `Testing proxy connectivity: ${proxy.host}:${proxy.port}`,
+            );
+
+            // Test 1: Try to fetch a simple endpoint through proxy
+            const testResult = await page.evaluate(async () => {
+                try {
+                    const response = await fetch("https://httpbin.org/ip", {
+                        method: "GET",
+                        timeout: 15000,
+                        signal: AbortSignal.timeout(15000),
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        return {
+                            success: true,
+                            ip: data.origin,
+                            proxyWorking: true,
+                        };
+                    }
+                    return { success: false, proxyWorking: false };
+                } catch (error) {
+                    return {
+                        success: false,
+                        proxyWorking: false,
+                        error: error.message,
+                    };
+                }
+            });
+
+            if (testResult.success && testResult.proxyWorking) {
+                console.log(
+                    `✅ Proxy validation successful - IP: ${testResult.ip}`,
+                );
+                return true;
+            } else {
+                console.log(
+                    `❌ Proxy validation failed: ${testResult.error || "Unknown error"}`,
+                );
+                return false;
+            }
+        } catch (error) {
+            console.error(`Proxy validation error: ${error.message}`);
+            return false;
+        }
     },
 };
 
