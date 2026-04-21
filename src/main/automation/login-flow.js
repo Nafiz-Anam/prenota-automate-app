@@ -91,10 +91,7 @@ const LoginFlowMethods = {
                 "The app is not reaching your configured proxy host: wrong port, firewall/VPN blocking outbound proxy, " +
                 "or Oxylabs blocking the connection. " +
                 oxylabsHint;
-        } else if (
-            errMsg.includes("TIMED_OUT") ||
-            errMsg.includes("Timeout")
-        ) {
+        } else if (errMsg.includes("TIMED_OUT") || errMsg.includes("Timeout")) {
             detail +=
                 ". Navigation timed out (slow proxy, blocked route, or target unreachable through this endpoint). " +
                 oxylabsHint;
@@ -209,6 +206,153 @@ const LoginFlowMethods = {
 
         if (!clicked) {
             await page.keyboard.press("Enter").catch(() => {});
+        }
+
+        // Check for "Utente sospeso" modal after login click
+        try {
+            console.log("Checking for Utente sospeso modal...");
+            const hasSuspendedModal = await page.evaluate(() => {
+                const modalText = document.body.innerText || "";
+                return (
+                    modalText.includes("Utente sospeso") ||
+                    modalText.includes("utente sospeso") ||
+                    modalText.includes("appuntamento non hai frequentato")
+                );
+            });
+
+            if (hasSuspendedModal) {
+                console.log(
+                    "Utente sospeso modal detected, waiting for modal to render...",
+                );
+
+                // Wait dynamically for the SI, HO CAPITO button to become available
+                const buttonReady = await page
+                    .waitForFunction(
+                        () => {
+                            const buttons = [
+                                ...document.querySelectorAll(
+                                    "button, .v-btn, [role='button']",
+                                ),
+                            ];
+                            const siHoCapitoBtn = buttons.find((btn) => {
+                                const text = (
+                                    btn.innerText ||
+                                    btn.textContent ||
+                                    ""
+                                )
+                                    .trim()
+                                    .toUpperCase();
+                                return (
+                                    text.includes("SI, HO CAPITO") ||
+                                    text.includes("SI HO CAPITO") ||
+                                    text.includes("HO CAPITO")
+                                );
+                            });
+
+                            if (!siHoCapitoBtn) return false;
+
+                            // Check if button is visible and clickable
+                            const style =
+                                window.getComputedStyle(siHoCapitoBtn);
+                            return (
+                                style.display !== "none" &&
+                                style.visibility !== "hidden" &&
+                                style.opacity !== "0" &&
+                                !siHoCapitoBtn.disabled
+                            );
+                        },
+                        { timeout: 10000 },
+                    )
+                    .catch(() => false);
+
+                if (buttonReady) {
+                    console.log("SI, HO CAPITO button is ready, clicking...");
+
+                    // Click the "SI, HO CAPITO" button
+                    const buttonClicked = await page.evaluate(() => {
+                        const buttons = [
+                            ...document.querySelectorAll(
+                                "button, .v-btn, [role='button']",
+                            ),
+                        ];
+                        const siHoCapitoBtn = buttons.find((btn) => {
+                            const text = (
+                                btn.innerText ||
+                                btn.textContent ||
+                                ""
+                            )
+                                .trim()
+                                .toUpperCase();
+                            return (
+                                text.includes("SI, HO CAPITO") ||
+                                text.includes("SI HO CAPITO") ||
+                                text.includes("HO CAPITO")
+                            );
+                        });
+
+                        if (!siHoCapitoBtn) return false;
+
+                        // Check if button is visible
+                        const style = window.getComputedStyle(siHoCapitoBtn);
+                        if (
+                            style.display === "none" ||
+                            style.visibility === "hidden" ||
+                            style.opacity === "0"
+                        ) {
+                            return false;
+                        }
+
+                        // Use real mouse events
+                        const r = siHoCapitoBtn.getBoundingClientRect();
+                        ["mousedown", "mouseup", "click"].forEach((t) =>
+                            siHoCapitoBtn.dispatchEvent(
+                                new MouseEvent(t, {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    clientX: r.left + r.width / 2,
+                                    clientY: r.top + r.height / 2,
+                                }),
+                            ),
+                        );
+                        return true;
+                    });
+
+                    if (buttonClicked) {
+                        console.log(
+                            "Successfully clicked SI, HO CAPITO button",
+                        );
+                        // Wait dynamically for modal to close and navigation to start
+                        await page
+                            .waitForFunction(
+                                () => {
+                                    const modalText =
+                                        document.body.innerText || "";
+                                    return (
+                                        !modalText.includes("Utente sospeso") &&
+                                        !modalText.includes("utente sospeso")
+                                    );
+                                },
+                                { timeout: 10000 },
+                            )
+                            .catch(() => {});
+                    } else {
+                        console.log(
+                            "SI, HO CAPITO button not found or not clickable",
+                        );
+                    }
+                } else {
+                    console.log(
+                        "SI, HO CAPITO button did not become ready within timeout",
+                    );
+                }
+            } else {
+                console.log("No Utente sospeso modal detected");
+            }
+        } catch (error) {
+            console.log(
+                "Error checking for Utente sospeso modal:",
+                error.message,
+            );
         }
 
         // Wait for navigation to complete instead of fixed delay
