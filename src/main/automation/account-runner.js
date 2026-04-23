@@ -218,14 +218,20 @@ const AccountRunnerMethods = {
                 const MAX_PROXY_RETRIES = 3;
 
                 // Try multiple proxy configurations for this account
-                for (attemptCount = 0; attemptCount < MAX_PROXY_RETRIES; attemptCount++) {
-                    console.log(`[${account.username}] Proxy attempt ${attemptCount + 1}/${MAX_PROXY_RETRIES}: ${currentProxy.host}:${currentProxy.port}`);
-                    
+                for (
+                    attemptCount = 0;
+                    attemptCount < MAX_PROXY_RETRIES;
+                    attemptCount++
+                ) {
+                    console.log(
+                        `[${account.username}] Proxy attempt ${attemptCount + 1}/${MAX_PROXY_RETRIES}: ${currentProxy.host}:${currentProxy.port}`,
+                    );
+
                     proxyWorking = await this.validateProxyConnectivity(
                         page,
                         currentProxy,
                     );
-                    
+
                     if (proxyWorking) {
                         console.log(
                             `[${account.username}] Proxy validation successful: ${currentProxy.host}:${currentProxy.port}`,
@@ -235,13 +241,18 @@ const AccountRunnerMethods = {
                         console.error(
                             `[${account.username}] Proxy attempt ${attemptCount + 1} failed: ${currentProxy.host}:${currentProxy.port}`,
                         );
-                        
+
                         // Try next proxy variation
-                        const nextProxy = this.getNextProxyVariation(currentProxy, attemptCount);
+                        const nextProxy = this.getNextProxyVariation(
+                            currentProxy,
+                            attemptCount,
+                        );
                         if (nextProxy) {
                             currentProxy = nextProxy;
-                            console.log(`[${account.username}] Trying next proxy variation: ${nextProxy.host}:${nextProxy.port}`);
-                            
+                            console.log(
+                                `[${account.username}] Trying next proxy variation: ${nextProxy.host}:${nextProxy.port}`,
+                            );
+
                             // Close current browser and create new one with new proxy
                             try {
                                 if (browser && context) {
@@ -249,43 +260,65 @@ const AccountRunnerMethods = {
                                     await browser.close();
                                 }
                             } catch (closeError) {
-                                console.error(`[${account.username}] Error closing browser: ${closeError.message}`);
+                                console.error(
+                                    `[${account.username}] Error closing browser: ${closeError.message}`,
+                                );
                             }
-                            
+
                             // Launch new browser with updated proxy
-                            browser = await chromium.launch({
-                                headless: false,
-                                javaScriptEnabled: true,
-                                bypassCSP: true,
-                                args: baseArgs,
-                                proxy: buildPlaywrightProxyConfig(currentProxy),
-                            });
-                            
-                            context = await browser.newContext({
-                                javaScriptEnabled: true,
-                                bypassCSP: true,
-                            });
-                            
-                            page = await context.newPage();
-                            
-                            // Re-apply page settings
-                            await page.route("**/*ads*", (route) => route.abort());
-                            await page.route("**/*tracking*", (route) => route.abort());
-                            await page.route("**/*facebook*", (route) => route.abort());
-                            await page.route("**/*google-analytics*", (route) => route.abort());
-                            await page.route("**/*doubleclick*", (route) => route.abort());
-                            page.setDefaultNavigationTimeout(60000);
-                            page.setDefaultTimeout(30000);
-                            
-                            console.log(`[${account.username}] New browser launched with proxy: ${currentProxy.host}:${currentProxy.port}`);
-                            
-                        } catch (launchError) {
-                            console.error(`[${account.username}] Error launching new browser: ${launchError.message}`);
-                            break; // Exit retry loop on launch failure
+                            try {
+                                browser = await chromium.launch({
+                                    headless: false,
+                                    javaScriptEnabled: true,
+                                    bypassCSP: true,
+                                    args: baseArgs,
+                                    proxy: buildPlaywrightProxyConfig(
+                                        currentProxy,
+                                    ),
+                                });
+
+                                context = await browser.newContext({
+                                    javaScriptEnabled: true,
+                                    bypassCSP: true,
+                                });
+
+                                page = await context.newPage();
+
+                                // Re-apply page settings
+                                await page.route("**/*ads*", (route) =>
+                                    route.abort(),
+                                );
+                                await page.route("**/*tracking*", (route) =>
+                                    route.abort(),
+                                );
+                                await page.route("**/*facebook*", (route) =>
+                                    route.abort(),
+                                );
+                                await page.route(
+                                    "**/*google-analytics*",
+                                    (route) => route.abort(),
+                                );
+                                await page.route("**/*doubleclick*", (route) =>
+                                    route.abort(),
+                                );
+                                page.setDefaultNavigationTimeout(60000);
+                                page.setDefaultTimeout(30000);
+
+                                console.log(
+                                    `[${account.username}] New browser launched with proxy: ${currentProxy.host}:${currentProxy.port}`,
+                                );
+                            } catch (launchError) {
+                                console.error(
+                                    `[${account.username}] Error launching new browser: ${launchError.message}`,
+                                );
+                                break; // Exit retry loop on launch failure
+                            }
+                        } else {
+                            console.log(
+                                `[${account.username}] No more proxy variations available`,
+                            );
+                            break;
                         }
-                    } else {
-                        console.log(`[${account.username}] No more proxy variations available`);
-                        break;
                     }
                 }
 
@@ -458,7 +491,7 @@ const AccountRunnerMethods = {
             { host: "proxy2.example.com", port: currentProxy.port },
             { host: "backup.proxy.com", port: currentProxy.port },
         ];
-        
+
         return variations[attemptCount % variations.length];
     },
 
