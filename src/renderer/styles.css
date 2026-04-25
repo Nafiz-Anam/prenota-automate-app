@@ -307,6 +307,33 @@ body {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+.password-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-wrapper .form-control {
+    padding-right: 60px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--text-secondary, #6b7280);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 2px 4px;
+    user-select: none;
+}
+
+.password-toggle:hover {
+    color: var(--primary-color, #2563eb);
+}
+
 /* Radio Options */
 .radio-option {
     display: flex;

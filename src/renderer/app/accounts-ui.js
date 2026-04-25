@@ -51,7 +51,10 @@ export const AccountsUiMethods = {
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="accountPassword" class="form-control" placeholder="Enter password">
+                <div class="password-wrapper">
+                    <input type="password" id="accountPassword" class="form-control" placeholder="Enter password">
+                    <button type="button" class="password-toggle" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'Show':'Hide'">Show</button>
+                </div>
             </div>
         `,
             [
@@ -98,7 +101,10 @@ export const AccountsUiMethods = {
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="accountPassword" class="form-control" value="${account.password}">
+                <div class="password-wrapper">
+                    <input type="password" id="accountPassword" class="form-control" value="${account.password}">
+                    <button type="button" class="password-toggle" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'Show':'Hide'">Show</button>
+                </div>
             </div>
         `,
             [

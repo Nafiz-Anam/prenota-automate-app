@@ -40,9 +40,10 @@ const AccountRunnerMethods = {
         const windowCount = Math.min(Math.max(config.windowCount || 1, 1), 20);
         const useProxy = config?.useProxy !== false;
 
+        let selectedProxies = [];
         let sessions;
         if (useProxy) {
-            const selectedProxies = proxies.filter(
+            selectedProxies = proxies.filter(
                 (p) => p.type !== "web_unblocker",
             );
             if (selectedProxies.length === 0) {
@@ -79,7 +80,7 @@ const AccountRunnerMethods = {
             if (this.stopFlag) return;
             setTimeout(() => {
                 if (this.stopFlag) return;
-                this.runAccount(account, proxy, config).catch((error) => {
+                this.runAccount(account, proxy, config, useProxy ? selectedProxies : []).catch((error) => {
                     console.error(
                         `Error running account ${account.username}:`,
                         error,
@@ -89,11 +90,22 @@ const AccountRunnerMethods = {
         });
     },
 
-    async runAccount(account, proxy, config) {
+    async runAccount(account, proxy, config, proxyPool = []) {
         const browserId = uuidv4();
         let browser = null;
         let context = null;
         this.activeCount++;
+
+        const cleanup = async () => {
+            this.browsers.delete(browserId);
+            try { if (browser) await browser.close(); } catch {}
+            try { if (context) await context.close(); } catch {}
+            this.activeCount--;
+            if (this.activeCount <= 0) {
+                this.activeCount = 0;
+                this.isRunning = false;
+            }
+        };
 
         const winLog = (msg) => {
             console.log(`[${account.username}] ${msg}`);
@@ -186,7 +198,7 @@ const AccountRunnerMethods = {
                 `STEP 2: Browser context ready (extension=${Boolean(extDir)})`,
             );
 
-            const page = context.pages()[0] || (await context.newPage());
+            let page = context.pages()[0] || (await context.newPage());
 
             // Block unnecessary resources for faster loading
             await page.route("**/*.{png,jpg,jpeg,gif,svg,ico,webp}", (route) =>
@@ -209,24 +221,109 @@ const AccountRunnerMethods = {
             page.setDefaultNavigationTimeout(60000);
             page.setDefaultTimeout(30000);
 
-            // STEP 3: Validate proxy connectivity with smart retry logic
-            winLog("STEP 3: Validating proxy connectivity with retry logic...");
+            // STEP 3: Validate proxy connectivity — rotate through pool on failure
+            winLog("STEP 3: Validating proxy connectivity...");
             if (proxy) {
+                // Build the ordered list of proxies to try: start from this proxy's
+                // position in the pool and wrap around.
+                const pool = proxyPool.length > 0 ? proxyPool : [proxy];
+                const startIdx = pool.findIndex(
+                    (p) =>
+                        p.host === proxy.host && p.port === String(proxy.port),
+                );
+                const orderedPool =
+                    startIdx <= 0
+                        ? pool
+                        : [
+                              ...pool.slice(startIdx),
+                              ...pool.slice(0, startIdx),
+                          ];
+
                 let currentProxy = { ...proxy };
                 let proxyWorking = false;
-                let attemptCount = 0;
-                const MAX_PROXY_RETRIES = 3;
 
-                // Try multiple proxy configurations for this account
-                for (
-                    attemptCount = 0;
-                    attemptCount < MAX_PROXY_RETRIES;
-                    attemptCount++
-                ) {
+                for (let attempt = 0; attempt < orderedPool.length; attempt++) {
+                    // Bail out immediately if stop was requested
+                    if (this.stopFlag) {
+                        winLog("Stop requested — aborting proxy retry.");
+                        return cleanup();
+                    }
+
+                    if (attempt > 0) {
+                        if (orderedPool.length === 1) {
+                            winLog(
+                                "ERROR: Proxy failed and no other proxies available. Add more proxies and retry.",
+                            );
+                            return cleanup();
+                        }
+                        currentProxy = { ...orderedPool[attempt] };
+                        winLog(
+                            `Proxy ${orderedPool[attempt - 1].host}:${orderedPool[attempt - 1].port} failed — trying next: ${currentProxy.host}:${currentProxy.port}`,
+                        );
+
+                        // Remove stale map entry BEFORE closing so stop() doesn't
+                        // try to close an already-dead browser.
+                        this.browsers.delete(browserId);
+
+                        // Close old browser/context
+                        try {
+                            if (context) await context.close();
+                        } catch { /* already closed */ }
+                        try {
+                            if (browser) await browser.close();
+                        } catch { /* already closed */ }
+                        browser = null;
+                        context = null;
+
+                        try {
+                            browser = await chromium.launch({
+                                headless: false,
+                                javaScriptEnabled: true,
+                                bypassCSP: true,
+                                args: baseArgs,
+                                proxy: buildPlaywrightProxyConfig(currentProxy),
+                            });
+                            context = await browser.newContext({
+                                javaScriptEnabled: true,
+                                bypassCSP: true,
+                            });
+                            // Register in map immediately so stop() can reach it
+                            this.browsers.set(browserId, { browser, context });
+                            page = await context.newPage();
+                            await page.route("**/*ads*", (route) =>
+                                route.abort(),
+                            );
+                            await page.route("**/*tracking*", (route) =>
+                                route.abort(),
+                            );
+                            await page.route("**/*facebook*", (route) =>
+                                route.abort(),
+                            );
+                            await page.route("**/*google-analytics*", (route) =>
+                                route.abort(),
+                            );
+                            await page.route("**/*doubleclick*", (route) =>
+                                route.abort(),
+                            );
+                            page.setDefaultNavigationTimeout(60000);
+                            page.setDefaultTimeout(30000);
+                        } catch (launchError) {
+                            console.error(
+                                `[${account.username}] Error launching browser with proxy ${currentProxy.host}:${currentProxy.port}: ${launchError.message}`,
+                            );
+                            // Clean up partial launch
+                            this.browsers.delete(browserId);
+                            try { if (context) await context.close(); } catch {}
+                            try { if (browser) await browser.close(); } catch {}
+                            browser = null;
+                            context = null;
+                            continue;
+                        }
+                    }
+
                     console.log(
-                        `[${account.username}] Proxy attempt ${attemptCount + 1}/${MAX_PROXY_RETRIES}: ${currentProxy.host}:${currentProxy.port}`,
+                        `[${account.username}] Proxy attempt ${attempt + 1}/${orderedPool.length}: ${currentProxy.host}:${currentProxy.port}`,
                     );
-
                     proxyWorking = await this.validateProxyConnectivity(
                         page,
                         currentProxy,
@@ -234,99 +331,17 @@ const AccountRunnerMethods = {
 
                     if (proxyWorking) {
                         console.log(
-                            `[${account.username}] Proxy validation successful: ${currentProxy.host}:${currentProxy.port}`,
+                            `[${account.username}] Proxy working: ${currentProxy.host}:${currentProxy.port}`,
                         );
-                        break; // Success - use this proxy
-                    } else {
-                        console.error(
-                            `[${account.username}] Proxy attempt ${attemptCount + 1} failed: ${currentProxy.host}:${currentProxy.port}`,
-                        );
-
-                        // Try next proxy variation
-                        const nextProxy = this.getNextProxyVariation(
-                            currentProxy,
-                            attemptCount,
-                        );
-                        if (nextProxy) {
-                            currentProxy = nextProxy;
-                            console.log(
-                                `[${account.username}] Trying next proxy variation: ${nextProxy.host}:${nextProxy.port}`,
-                            );
-
-                            // Close current browser and create new one with new proxy
-                            try {
-                                if (browser && context) {
-                                    await context.close();
-                                    await browser.close();
-                                }
-                            } catch (closeError) {
-                                console.error(
-                                    `[${account.username}] Error closing browser: ${closeError.message}`,
-                                );
-                            }
-
-                            // Launch new browser with updated proxy
-                            try {
-                                browser = await chromium.launch({
-                                    headless: false,
-                                    javaScriptEnabled: true,
-                                    bypassCSP: true,
-                                    args: baseArgs,
-                                    proxy: buildPlaywrightProxyConfig(
-                                        currentProxy,
-                                    ),
-                                });
-
-                                context = await browser.newContext({
-                                    javaScriptEnabled: true,
-                                    bypassCSP: true,
-                                });
-
-                                page = await context.newPage();
-
-                                // Re-apply page settings
-                                await page.route("**/*ads*", (route) =>
-                                    route.abort(),
-                                );
-                                await page.route("**/*tracking*", (route) =>
-                                    route.abort(),
-                                );
-                                await page.route("**/*facebook*", (route) =>
-                                    route.abort(),
-                                );
-                                await page.route(
-                                    "**/*google-analytics*",
-                                    (route) => route.abort(),
-                                );
-                                await page.route("**/*doubleclick*", (route) =>
-                                    route.abort(),
-                                );
-                                page.setDefaultNavigationTimeout(60000);
-                                page.setDefaultTimeout(30000);
-
-                                console.log(
-                                    `[${account.username}] New browser launched with proxy: ${currentProxy.host}:${currentProxy.port}`,
-                                );
-                            } catch (launchError) {
-                                console.error(
-                                    `[${account.username}] Error launching new browser: ${launchError.message}`,
-                                );
-                                break; // Exit retry loop on launch failure
-                            }
-                        } else {
-                            console.log(
-                                `[${account.username}] No more proxy variations available`,
-                            );
-                            break;
-                        }
+                        break;
                     }
                 }
 
                 if (!proxyWorking) {
-                    console.error(
-                        `[${account.username}] All ${MAX_PROXY_RETRIES} proxy attempts failed for account ${account.username} - marking account as failed`,
+                    winLog(
+                        `ERROR: All ${orderedPool.length} proxy(s) failed. No working proxy found — stopping this account.`,
                     );
-                    return; // Skip this account and continue with next
+                    return cleanup();
                 }
             } else {
                 console.log(
@@ -399,30 +414,16 @@ const AccountRunnerMethods = {
                     break;
                 }
             }
+
+            // User closed the window or stop was requested
+            await cleanup();
+
         } catch (error) {
             console.error(
                 `Browser fatal error for ${account.username}:`,
                 error,
             );
-            try {
-                if (browser) {
-                    await browser.close();
-                } else if (context) {
-                    await context.close();
-                }
-            } catch {
-                /* ignore */
-            }
-            this.browsers.delete(browserId);
-        }
-
-        if (this.browsers.has(browserId)) {
-            this.browsers.delete(browserId);
-        }
-        this.activeCount--;
-        if (this.activeCount <= 0) {
-            this.activeCount = 0;
-            this.isRunning = false;
+            await cleanup();
         }
     },
 
@@ -471,28 +472,6 @@ const AccountRunnerMethods = {
             browsers: Array.from(this.browsers.keys()),
             count: this.browsers.size,
         };
-    },
-
-    getNextProxyVariation(currentProxy, attemptCount) {
-        // Generate alternative proxy configurations based on attempt number
-        const variations = [
-            // Try different ports on same host
-            { host: currentProxy.host, port: parseInt(currentProxy.port) + 1 },
-            { host: currentProxy.host, port: parseInt(currentProxy.port) + 2 },
-            { host: currentProxy.host, port: parseInt(currentProxy.port) - 1 },
-            { host: currentProxy.host, port: parseInt(currentProxy.port) - 2 },
-            // Try common alternative ports
-            { host: currentProxy.host, port: 8080 },
-            { host: currentProxy.host, port: 3128 },
-            { host: currentProxy.host, port: 8888 },
-            { host: currentProxy.host, port: 9000 },
-            // Try different common proxy hosts if original fails completely
-            { host: "proxy1.example.com", port: currentProxy.port },
-            { host: "proxy2.example.com", port: currentProxy.port },
-            { host: "backup.proxy.com", port: currentProxy.port },
-        ];
-
-        return variations[attemptCount % variations.length];
     },
 
     async validateProxyConnectivity(page, proxy) {
