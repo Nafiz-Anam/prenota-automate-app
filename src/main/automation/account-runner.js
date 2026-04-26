@@ -139,57 +139,56 @@ const AccountRunnerMethods = {
             }
 
             const extDir = resolveAutomationExtensionDir(config);
-            const contextOptions = {
-                viewport: null,
-                ignoreHTTPSErrors: true,
-                javaScriptEnabled: true,
-                bypassCSP: true,
-            };
-            if (proxyConfig) {
-                contextOptions.proxy = proxyConfig;
-            }
-
             const baseArgs = getDefaultChromiumArgs();
 
-            if (extDir) {
-                // Playwright only loads extensions via launchPersistentContext (unique profile per window).
-                const userDataDir = path.join(
-                    os.tmpdir(),
-                    "prenota-playwright-profiles",
-                    browserId,
-                );
-                fs.mkdirSync(userDataDir, { recursive: true });
-                const extArgs = [
-                    ...getChromiumArgsForExtensions(),
-                    `--disable-extensions-except=${extDir}`,
-                    `--load-extension=${extDir}`,
-                ];
-                console.log(
-                    `[${account.username}] Chromium extension folder: ${extDir}`,
-                );
-                console.log(
-                    `[${account.username}] Persistent profile (this window): ${userDataDir}`,
-                );
-                context = await launchPersistentContextWithExtension(
-                    userDataDir,
-                    contextOptions,
-                    extArgs,
-                    {
-                        useChromeChannel: config?.useChromeChannel === true,
-                    },
-                );
-                browser = context.browser();
-                if (!browser) {
-                    console.warn(
-                        `[${account.username}] context.browser() is null (Chrome+persistent) — using context for lifecycle; UI stays open.`,
+            const launchSession = async (proxyConf) => {
+                const ctxOpts = {
+                    viewport: null,
+                    ignoreHTTPSErrors: true,
+                    javaScriptEnabled: true,
+                    bypassCSP: true,
+                };
+                if (proxyConf) ctxOpts.proxy = proxyConf;
+
+                if (extDir) {
+                    const userDataDir = path.join(
+                        os.tmpdir(),
+                        "prenota-playwright-profiles",
+                        browserId,
                     );
+                    fs.mkdirSync(userDataDir, { recursive: true });
+                    const extArgs = [
+                        ...getChromiumArgsForExtensions(),
+                        `--disable-extensions-except=${extDir}`,
+                        `--load-extension=${extDir}`,
+                    ];
+                    const ctx = await launchPersistentContextWithExtension(
+                        userDataDir,
+                        ctxOpts,
+                        extArgs,
+                        { useChromeChannel: config?.useChromeChannel === true },
+                    );
+                    return { browser: ctx.browser(), context: ctx };
                 }
-            } else {
-                browser = await chromium.launch({
+                const br = await chromium.launch({
                     headless: false,
                     args: baseArgs,
                 });
-                context = await browser.newContext(contextOptions);
+                const ctx = await br.newContext(ctxOpts);
+                return { browser: br, context: ctx };
+            };
+
+            if (extDir) {
+                console.log(
+                    `[${account.username}] Chromium extension folder: ${extDir}`,
+                );
+            }
+
+            ({ browser, context } = await launchSession(proxyConfig));
+            if (extDir && !browser) {
+                console.warn(
+                    `[${account.username}] context.browser() is null (Chrome+persistent) — using context for lifecycle; UI stays open.`,
+                );
             }
 
             this.browsers.set(browserId, { browser, context });
@@ -276,20 +275,12 @@ const AccountRunnerMethods = {
                         context = null;
 
                         try {
-                            browser = await chromium.launch({
-                                headless: false,
-                                javaScriptEnabled: true,
-                                bypassCSP: true,
-                                args: baseArgs,
-                                proxy: buildPlaywrightProxyConfig(currentProxy),
-                            });
-                            context = await browser.newContext({
-                                javaScriptEnabled: true,
-                                bypassCSP: true,
-                            });
+                            ({ browser, context } = await launchSession(
+                                buildPlaywrightProxyConfig(currentProxy),
+                            ));
                             // Register in map immediately so stop() can reach it
                             this.browsers.set(browserId, { browser, context });
-                            page = await context.newPage();
+                            page = context.pages()[0] || (await context.newPage());
                             await page.route("**/*ads*", (route) =>
                                 route.abort(),
                             );

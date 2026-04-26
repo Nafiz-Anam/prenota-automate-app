@@ -53,7 +53,7 @@ export const AccountsUiMethods = {
                 <label>Password</label>
                 <div class="password-wrapper">
                     <input type="password" id="accountPassword" class="form-control" placeholder="Enter password">
-                    <button type="button" class="password-toggle" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'Show':'Hide'">Show</button>
+                    <button type="button" class="password-toggle">Show</button>
                 </div>
             </div>
         `,
@@ -66,6 +66,7 @@ export const AccountsUiMethods = {
                 },
             ],
         );
+        this.wirePasswordToggle();
     },
 
     async addAccount() {
@@ -103,7 +104,7 @@ export const AccountsUiMethods = {
                 <label>Password</label>
                 <div class="password-wrapper">
                     <input type="password" id="accountPassword" class="form-control" value="${account.password}">
-                    <button type="button" class="password-toggle" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'Show':'Hide'">Show</button>
+                    <button type="button" class="password-toggle">Show</button>
                 </div>
             </div>
         `,
@@ -116,6 +117,18 @@ export const AccountsUiMethods = {
                 },
             ],
         );
+        this.wirePasswordToggle();
+    },
+
+    wirePasswordToggle() {
+        const btn = document.querySelector(".password-toggle");
+        const input = document.getElementById("accountPassword");
+        if (!btn || !input) return;
+        btn.addEventListener("click", () => {
+            const showing = input.type === "password";
+            input.type = showing ? "text" : "password";
+            btn.textContent = showing ? "Hide" : "Show";
+        });
     },
 
     async updateAccount(index) {
