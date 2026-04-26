@@ -12,6 +12,7 @@ const {
 const {
     launchPersistentContextWithExtension,
     resolveAutomationExtensionDir,
+    resolveAutomationExtensionDirs,
 } = require("./extension-loader.js");
 const { buildPlaywrightProxyConfig } = require("./proxy-config.js");
 
@@ -138,7 +139,8 @@ const AccountRunnerMethods = {
                 );
             }
 
-            const extDir = resolveAutomationExtensionDir(config);
+            const extDirs = resolveAutomationExtensionDirs(config);
+            const hasExt = extDirs.length > 0;
             const baseArgs = getDefaultChromiumArgs();
 
             const launchSession = async (proxyConf) => {
@@ -150,17 +152,18 @@ const AccountRunnerMethods = {
                 };
                 if (proxyConf) ctxOpts.proxy = proxyConf;
 
-                if (extDir) {
+                if (hasExt) {
                     const userDataDir = path.join(
                         os.tmpdir(),
                         "prenota-playwright-profiles",
                         browserId,
                     );
                     fs.mkdirSync(userDataDir, { recursive: true });
+                    const joined = extDirs.join(",");
                     const extArgs = [
                         ...getChromiumArgsForExtensions(),
-                        `--disable-extensions-except=${extDir}`,
-                        `--load-extension=${extDir}`,
+                        `--disable-extensions-except=${joined}`,
+                        `--load-extension=${joined}`,
                     ];
                     const ctx = await launchPersistentContextWithExtension(
                         userDataDir,
@@ -178,14 +181,14 @@ const AccountRunnerMethods = {
                 return { browser: br, context: ctx };
             };
 
-            if (extDir) {
+            if (hasExt) {
                 console.log(
-                    `[${account.username}] Chromium extension folder: ${extDir}`,
+                    `[${account.username}] Chromium extension folders: ${extDirs.join(" | ")}`,
                 );
             }
 
             ({ browser, context } = await launchSession(proxyConfig));
-            if (extDir && !browser) {
+            if (hasExt && !browser) {
                 console.warn(
                     `[${account.username}] context.browser() is null (Chrome+persistent) — using context for lifecycle; UI stays open.`,
                 );
@@ -194,7 +197,7 @@ const AccountRunnerMethods = {
             this.browsers.set(browserId, { browser, context });
 
             winLog(
-                `STEP 2: Browser context ready (extension=${Boolean(extDir)})`,
+                `STEP 2: Browser context ready (extensions=${extDirs.length})`,
             );
 
             let page = context.pages()[0] || (await context.newPage());

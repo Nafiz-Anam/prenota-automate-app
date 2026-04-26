@@ -106,25 +106,76 @@ function findProjectCapsolverExtensionDir() {
 }
 
 /**
- * Saved path in settings wins; otherwise discover under project root.
+ * Buster captcha-solver extension. Try common folder names, then any
+ * project-root directory whose name matches /buster/i.
  */
-function resolveAutomationExtensionDir(config) {
+function findProjectBusterExtensionDir() {
+    const root = path.join(__dirname, "..", "..", "..");
+    const preferred = ["buster", "buster-captcha-solver"];
+    for (const name of preferred) {
+        const resolved = resolveChromiumExtensionDir(path.join(root, name));
+        if (resolved) return resolved;
+    }
+    try {
+        const entries = fs.readdirSync(root, { withFileTypes: true });
+        for (const ent of entries) {
+            if (!ent.isDirectory()) continue;
+            if (!/buster/i.test(ent.name)) continue;
+            const resolved = resolveChromiumExtensionDir(
+                path.join(root, ent.name),
+            );
+            if (resolved) {
+                console.log(
+                    `Buster extension folder (auto-detected): ${resolved}`,
+                );
+                return resolved;
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+    return null;
+}
+
+/**
+ * Returns array of unpacked extension dirs to load. Capsolver from settings
+ * (or auto-discovered) plus optional Buster auto-discovered under project root.
+ */
+function resolveAutomationExtensionDirs(config) {
+    const dirs = [];
     const fromSettings = resolveChromiumExtensionDir(
         config?.chromiumExtensionPath,
     );
     if (fromSettings) {
-        return fromSettings;
+        dirs.push(fromSettings);
+    } else {
+        const cap = findProjectCapsolverExtensionDir();
+        if (cap) {
+            console.log(`CapSolver extension (default path): ${cap}`);
+            dirs.push(cap);
+        }
     }
-    const fallback = findProjectCapsolverExtensionDir();
-    if (fallback) {
-        console.log(`CapSolver extension (default path): ${fallback}`);
+    const buster = findProjectBusterExtensionDir();
+    if (buster && !dirs.includes(buster)) {
+        console.log(`Buster extension (default path): ${buster}`);
+        dirs.push(buster);
     }
-    return fallback;
+    return dirs;
+}
+
+/**
+ * Backwards-compatible single-dir resolver. Returns first dir or null.
+ */
+function resolveAutomationExtensionDir(config) {
+    const dirs = resolveAutomationExtensionDirs(config);
+    return dirs[0] || null;
 }
 
 module.exports = {
     launchPersistentContextWithExtension,
     resolveChromiumExtensionDir,
     findProjectCapsolverExtensionDir,
+    findProjectBusterExtensionDir,
     resolveAutomationExtensionDir,
+    resolveAutomationExtensionDirs,
 };
