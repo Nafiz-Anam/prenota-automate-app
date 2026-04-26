@@ -121,13 +121,17 @@ export const AccountsUiMethods = {
     },
 
     wirePasswordToggle() {
-        const btn = document.querySelector(".password-toggle");
-        const input = document.getElementById("accountPassword");
-        if (!btn || !input) return;
-        btn.addEventListener("click", () => {
-            const showing = input.type === "password";
-            input.type = showing ? "text" : "password";
-            btn.textContent = showing ? "Hide" : "Show";
+        const buttons = document.querySelectorAll(".password-toggle");
+        buttons.forEach((btn) => {
+            const targetId = btn.dataset.target || "accountPassword";
+            const input = document.getElementById(targetId)
+                || btn.previousElementSibling;
+            if (!input) return;
+            btn.addEventListener("click", () => {
+                const showing = input.type === "password";
+                input.type = showing ? "text" : "password";
+                btn.textContent = showing ? "Hide" : "Show";
+            });
         });
     },
 

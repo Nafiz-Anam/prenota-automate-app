@@ -76,7 +76,10 @@ export const ProxiesUiMethods = {
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="proxyPass" class="form-control" placeholder="Proxy password">
+                <div class="password-wrapper">
+                    <input type="password" id="proxyPass" class="form-control" placeholder="Proxy password">
+                    <button type="button" class="password-toggle" data-target="proxyPass">Show</button>
+                </div>
             </div>
         `,
             [
@@ -88,6 +91,7 @@ export const ProxiesUiMethods = {
                 },
             ],
         );
+        this.wirePasswordToggle();
     },
 
     async addProxy() {
@@ -136,7 +140,10 @@ export const ProxiesUiMethods = {
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="proxyPass" class="form-control" value="${proxy.pass}">
+                <div class="password-wrapper">
+                    <input type="password" id="proxyPass" class="form-control" value="${proxy.pass}">
+                    <button type="button" class="password-toggle" data-target="proxyPass">Show</button>
+                </div>
             </div>
         `,
             [
@@ -148,6 +155,7 @@ export const ProxiesUiMethods = {
                 },
             ],
         );
+        this.wirePasswordToggle();
     },
 
     async updateProxy(index) {
