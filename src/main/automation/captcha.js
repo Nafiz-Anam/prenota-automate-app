@@ -43,13 +43,23 @@ const CaptchaMethods = {
     // callback path so Vue's reactive form state registers the solution and
     // enables the PRENOTA button. Runs in the background while we await the
     // button; safe to call-and-ignore errors.
-    async _forceCaptchaTokenApply(page, accountLabel) {
-        for (let attempt = 0; attempt < 90; attempt++) {
+    //
+    // ctrl: { stop: bool, ignoreToken: string|null, lastFiredToken: string|null }
+    // Loops continuously (not exit-on-first-success) so a fresh token after a
+    // server redirect/retry also gets its Vue callback fired. Skips tokens
+    // matching ignoreToken (the stale token from a prior submit) until a new
+    // one arrives. Caller flips ctrl.stop=true to terminate.
+    async _forceCaptchaTokenApply(page, accountLabel, ctrl) {
+        ctrl = ctrl || {};
+        const maxIterations = 600; // ~10 min hard cap
+        for (let attempt = 0; attempt < maxIterations; attempt++) {
+            if (ctrl.stop) return;
             await new Promise((r) => setTimeout(r, 1000));
-            let applied = false;
+            if (ctrl.stop) return;
+
+            let firedToken = null;
             try {
-                applied = await page.evaluate(() => {
-                    // Find the first g-recaptcha-response textarea with a token
+                firedToken = await page.evaluate((ignoreToken) => {
                     const textareas = [
                         ...document.querySelectorAll(
                             'textarea[name="g-recaptcha-response"]',
@@ -57,10 +67,9 @@ const CaptchaMethods = {
                     ];
                     const token = textareas
                         .map((t) => t.value && t.value.trim())
-                        .find((v) => v && v.length > 20);
-                    if (!token) return false;
+                        .find((v) => v && v.length > 20 && v !== ignoreToken);
+                    if (!token) return null;
 
-                    // Fire native input/change events so Vue picks up the value
                     textareas.forEach((ta) => {
                         if (!ta.value) return;
                         ["input", "change"].forEach((type) =>
@@ -70,11 +79,10 @@ const CaptchaMethods = {
                         );
                     });
 
-                    // Walk ___grecaptcha_cfg.clients to find and call callbacks
                     const clients =
                         window.___grecaptcha_cfg &&
                         window.___grecaptcha_cfg.clients;
-                    if (!clients) return true;
+                    if (!clients) return token;
 
                     const callFn = (fn) => {
                         try {
@@ -108,17 +116,18 @@ const CaptchaMethods = {
                         walk(clients[id], 0);
                     }
 
-                    return true;
-                });
+                    return token;
+                }, ctrl.ignoreToken || null);
             } catch (_) {
-                // page may have navigated; stop
-                break;
-            }
-            if (applied) {
-                console.log(
-                    `[${accountLabel}] Captcha token found and callbacks fired (attempt ${attempt + 1}).`,
-                );
+                // page may have navigated/closed; stop
                 return;
+            }
+
+            if (firedToken && firedToken !== ctrl.lastFiredToken) {
+                ctrl.lastFiredToken = firedToken;
+                console.log(
+                    `[${accountLabel}] Captcha token applied & Vue callbacks fired (iter ${attempt + 1}).`,
+                );
             }
         }
     },
