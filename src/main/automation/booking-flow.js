@@ -409,7 +409,7 @@ const BookingFlowMethods = {
             resolveAutomationExtensionDir(config),
         );
 
-        const MAX_FINAL_RETRIES = 3;
+        const MAX_FINAL_RETRIES = 10;
 
         // Track the token used in the previous submit attempt. On retry we
         // must wait for a DIFFERENT token (the stale one is still in the DOM

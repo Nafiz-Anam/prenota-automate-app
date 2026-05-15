@@ -26,20 +26,25 @@ const ServiceFlowMethods = {
             `[${accountLabel}] Service selection (phrase: "${configPhrases[0]}")...`,
         );
 
-        const paginationOrder = [1, 2];
-        let serviceClicked = false;
+        // Page 1 is the default — try matching on the current page first, then
+        // only paginate to page 2 if the service wasn't found.
+        let serviceClicked = await this.clickServiceByPhrases(
+            page,
+            configPhrases,
+        );
+        console.log(
+            `[${accountLabel}] Service row on default page: ${serviceClicked ? "ok" : "not found"}`,
+        );
 
-        for (const pNum of paginationOrder) {
-            const pagOk = await this.clickPaginationNumber(page, pNum);
+        if (!serviceClicked) {
+            const pagOk = await this.clickPaginationNumber(page, 2);
             console.log(
-                `[${accountLabel}] Pagination ${pNum}: ${pagOk ? "ok" : "skip"}`,
+                `[${accountLabel}] Pagination 2: ${pagOk ? "ok" : "skip"}`,
             );
-
             serviceClicked = await this.clickServiceByPhrases(
                 page,
                 configPhrases,
             );
-            if (serviceClicked) break;
         }
 
         if (!serviceClicked) {

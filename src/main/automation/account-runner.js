@@ -223,25 +223,57 @@ const AccountRunnerMethods = {
             page.setDefaultNavigationTimeout(60000);
             page.setDefaultTimeout(30000);
 
-            // STEP 3: Validate proxy connectivity — rotate through pool on failure
-            winLog("STEP 3: Validating proxy connectivity...");
+            // Shared helpers for re-launching the browser with a new proxy.
+            // Used by STEP 3 (connectivity validation) and STEP 4-6 (login retry).
+            const wireRoutesAndTimeouts = async (p) => {
+                await p.route("**/*ads*", (route) => route.abort());
+                await p.route("**/*tracking*", (route) => route.abort());
+                await p.route("**/*facebook*", (route) => route.abort());
+                await p.route("**/*google-analytics*", (route) =>
+                    route.abort(),
+                );
+                await p.route("**/*doubleclick*", (route) => route.abort());
+                p.setDefaultNavigationTimeout(60000);
+                p.setDefaultTimeout(30000);
+            };
+
+            const relaunchWithProxy = async (newProxy) => {
+                this.browsers.delete(browserId);
+                try { if (context) await context.close(); } catch {}
+                try { if (browser) await browser.close(); } catch {}
+                browser = null;
+                context = null;
+                ({ browser, context } = await launchSession(
+                    buildPlaywrightProxyConfig(newProxy),
+                ));
+                this.browsers.set(browserId, { browser, context });
+                page = context.pages()[0] || (await context.newPage());
+                await wireRoutesAndTimeouts(page);
+            };
+
+            // Proxy pool & current proxy tracker — hoisted so STEP 4-6 can
+            // also rotate when login fails (slow page load, etc.)
+            let orderedPool = [];
+            let currentProxy = proxy ? { ...proxy } : null;
+            let currentProxyIdx = 0;
             if (proxy) {
-                // Build the ordered list of proxies to try: start from this proxy's
-                // position in the pool and wrap around.
                 const pool = proxyPool.length > 0 ? proxyPool : [proxy];
                 const startIdx = pool.findIndex(
                     (p) =>
                         p.host === proxy.host && p.port === String(proxy.port),
                 );
-                const orderedPool =
+                orderedPool =
                     startIdx <= 0
                         ? pool
                         : [
                               ...pool.slice(startIdx),
                               ...pool.slice(0, startIdx),
                           ];
+            }
 
-                let currentProxy = { ...proxy };
+            // STEP 3: Validate proxy connectivity — rotate through pool on failure
+            winLog("STEP 3: Validating proxy connectivity...");
+            if (proxy) {
                 let proxyWorking = false;
 
                 for (let attempt = 0; attempt < orderedPool.length; attempt++) {
@@ -259,58 +291,16 @@ const AccountRunnerMethods = {
                             return cleanup();
                         }
                         currentProxy = { ...orderedPool[attempt] };
+                        currentProxyIdx = attempt;
                         winLog(
                             `Proxy ${orderedPool[attempt - 1].host}:${orderedPool[attempt - 1].port} failed — trying next: ${currentProxy.host}:${currentProxy.port}`,
                         );
-
-                        // Remove stale map entry BEFORE closing so stop() doesn't
-                        // try to close an already-dead browser.
-                        this.browsers.delete(browserId);
-
-                        // Close old browser/context
                         try {
-                            if (context) await context.close();
-                        } catch { /* already closed */ }
-                        try {
-                            if (browser) await browser.close();
-                        } catch { /* already closed */ }
-                        browser = null;
-                        context = null;
-
-                        try {
-                            ({ browser, context } = await launchSession(
-                                buildPlaywrightProxyConfig(currentProxy),
-                            ));
-                            // Register in map immediately so stop() can reach it
-                            this.browsers.set(browserId, { browser, context });
-                            page = context.pages()[0] || (await context.newPage());
-                            await page.route("**/*ads*", (route) =>
-                                route.abort(),
-                            );
-                            await page.route("**/*tracking*", (route) =>
-                                route.abort(),
-                            );
-                            await page.route("**/*facebook*", (route) =>
-                                route.abort(),
-                            );
-                            await page.route("**/*google-analytics*", (route) =>
-                                route.abort(),
-                            );
-                            await page.route("**/*doubleclick*", (route) =>
-                                route.abort(),
-                            );
-                            page.setDefaultNavigationTimeout(60000);
-                            page.setDefaultTimeout(30000);
+                            await relaunchWithProxy(currentProxy);
                         } catch (launchError) {
                             console.error(
                                 `[${account.username}] Error launching browser with proxy ${currentProxy.host}:${currentProxy.port}: ${launchError.message}`,
                             );
-                            // Clean up partial launch
-                            this.browsers.delete(browserId);
-                            try { if (context) await context.close(); } catch {}
-                            try { if (browser) await browser.close(); } catch {}
-                            browser = null;
-                            context = null;
                             continue;
                         }
                     }
@@ -343,26 +333,80 @@ const AccountRunnerMethods = {
                 );
             }
 
-            // STEP 4+5: Navigate directly to login page (skip redundant root nav)
-            winLog("STEP 4: Navigating to login page...");
-            await this.gotoWithRetry(page, LOGIN_URL, account.username).catch(
-                (err) =>
+            // STEP 4 + 6: Navigate to login page and submit credentials.
+            // If the login page is too slow (email/password locator times out)
+            // or navigation fails, close this browser and rotate to the next
+            // proxy in the pool. Loops through every untried proxy before
+            // giving up.
+            let loginOk = false;
+            const maxLoginAttempts = Math.max(orderedPool.length || 1, 1);
+            for (let lAttempt = 1; lAttempt <= maxLoginAttempts; lAttempt++) {
+                if (this.stopFlag) {
+                    return cleanup();
+                }
+
+                winLog(
+                    `STEP 4: Navigating to login page (attempt ${lAttempt}/${maxLoginAttempts}${currentProxy ? `, proxy ${currentProxy.host}:${currentProxy.port}` : ""})...`,
+                );
+                let navOk = true;
+                try {
+                    await this.gotoWithRetry(
+                        page,
+                        LOGIN_URL,
+                        account.username,
+                    );
+                } catch (err) {
+                    navOk = false;
                     console.error(
                         `[${account.username}] Login navigation:`,
-                        err,
-                    ),
-            );
+                        err?.message || err,
+                    );
+                }
 
-            // STEP 6: Login with credentials
-            winLog("STEP 6: Logging in with credentials...");
-            await this.loginPlaywright(page, account).catch((err) =>
-                console.error(`[${account.username}] Login:`, err?.message),
-            );
+                if (navOk) {
+                    winLog("STEP 6: Logging in with credentials...");
+                    try {
+                        await this.loginPlaywright(page, account);
+                        loginOk = true;
+                        break;
+                    } catch (err) {
+                        console.error(
+                            `[${account.username}] Login:`,
+                            err?.message || err,
+                        );
+                    }
+                }
+
+                // Login or navigation failed — rotate to the next proxy and retry.
+                if (lAttempt >= maxLoginAttempts || orderedPool.length <= 1) {
+                    winLog(
+                        `ERROR: Login failed on all ${maxLoginAttempts} proxy(s). Stopping this account.`,
+                    );
+                    break;
+                }
+
+                currentProxyIdx = (currentProxyIdx + 1) % orderedPool.length;
+                currentProxy = { ...orderedPool[currentProxyIdx] };
+                winLog(
+                    `Login page too slow — closing browser and retrying with proxy ${currentProxy.host}:${currentProxy.port}...`,
+                );
+                try {
+                    await relaunchWithProxy(currentProxy);
+                } catch (launchError) {
+                    console.error(
+                        `[${account.username}] Relaunch with proxy ${currentProxy.host}:${currentProxy.port} failed: ${launchError.message}`,
+                    );
+                }
+            }
+
+            if (!loginOk) {
+                return cleanup();
+            }
 
             // STEP 7+: Heading-driven booking wizard (service → summary)
             winLog("STEP 7: Starting heading-driven booking wizard...");
-            if (proxy) {
-                await this.installProxyOverlay(page, proxy).catch(() => {});
+            if (currentProxy) {
+                await this.installProxyOverlay(page, currentProxy).catch(() => {});
             }
             await page
                 .waitForURL(/prenotazione/i, { timeout: 120000 })
@@ -370,8 +414,8 @@ const AccountRunnerMethods = {
             await this.runBookingWizard(page, account.username, config);
 
             winLog(
-                proxy
-                    ? `Browser running with proxy ${proxy.host}:${proxy.port}`
+                currentProxy
+                    ? `Browser running with proxy ${currentProxy.host}:${currentProxy.port}`
                     : "Browser running with direct connection (no proxy)",
             );
 
